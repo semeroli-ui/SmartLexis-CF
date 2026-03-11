@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile for teachers and students",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["teacher", "student"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Exam": {
+      "title": "Exam",
+      "description": "Exam scores for a student",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "choice": { "type": "number" },
+        "modernReading": { "type": "number" },
+        "classicReading": { "type": "number" },
+        "composition": { "type": "number" },
+        "total": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "total", "date"]
+    },
+    "WritingAnalysis": {
+      "title": "WritingAnalysis",
+      "description": "AI analysis of handwritten essays",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "images": { "type": "array", "items": { "type": "string" } },
+        "transcription": { "type": "string" },
+        "analysis": { "type": "string" },
+        "score": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "analysis", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/exams/{examId}": {
+      "schema": "Exam",
+      "description": "Exam records"
+    },
+    "/writingAnalyses/{analysisId}": {
+      "schema": "WritingAnalysis",
+      "description": "Essay analysis records"
+    }
+  }
+}
