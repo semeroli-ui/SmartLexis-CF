@@ -1,5 +1,14 @@
-export const onRequestGet = async (context: any) => {
+export const onRequest = async (context: any) => {
   const { env, request } = context;
+  if (request.method !== "GET") {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  if (!env.DB) {
+    return new Response(JSON.stringify({ error: "D1 数据库未配置，请在 Cloudflare 控制台绑定数据库。" }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
   const url = new URL(request.url);
   const studentId = url.searchParams.get("studentId");
 
