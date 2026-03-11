@@ -174,22 +174,16 @@ export default function App() {
     setIsGenerating(true);
     setAiPrescription(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `你是一位资深的语文教育专家。请根据以下学生的考试数据，提供一份详细的学情诊断和学习建议（约300字）。
-        学生姓名：${student.name}
-        总分：${student.total} / 150
-        各项得分：
-        - 选择题：${student.choice} / 30
-        - 现代文阅读：${student.modernReading} / 30
-        - 文言文阅读：${student.classicReading} / 20
-        - 非连续性文本：${student.nonLinear} / 10
-        - 默写填空：${student.dictation} / 10
-        - 作文：${student.composition} / 50
-        请从核心素养（语言建构、思维发展、审美鉴赏、文化传承、表达创作）的角度进行分析，并给出具体的提升路径。请使用 Markdown 格式。`,
+      // 调用 Cloudflare 后端 API 进行学情分析
+      const response = await fetch('/api/analyze_student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student })
       });
-      setAiPrescription(response.text || "生成失败，请稍后再试。");
+      
+      if (!response.ok) throw new Error('AI 分析失败');
+      const data = await response.json();
+      setAiPrescription(data.text || "生成失败，请稍后再试。");
     } catch (error) {
       console.error("AI Error:", error);
       setAiPrescription("AI 诊断暂时不可用，请检查网络或 API 配置。");
@@ -209,39 +203,22 @@ export default function App() {
     }
     setIsAnalyzingEssay(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      
-      const imageParts = essayImages.map(base64 => ({
-        inlineData: {
-          data: base64.split(',')[1],
-          mimeType: "image/jpeg"
-        }
-      }));
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-image",
-        contents: {
-          parts: [
-            ...imageParts,
-            { text: `你是一位资深的语文阅卷专家。请对题目为《${essayTitle}》的手写作文图片进行深度诊断。
-            
-            请严格执行以下任务：
-            1. **全文转录 (OCR)**：请务必字斟句酌，完整、准确地转录图片中的所有手写文字。这是最重要的任务，请确保不遗漏任何段落。
-            2. **综合评分**：满分50分（按中高考作文标准）。
-            3. **维度评价**：从立意、结构、语言、素材四个维度进行深度点评。
-            4. **改进建议**：给出具体的修改方向和范文参考。
-            
-            请直接输出 Markdown 格式的诊断报告。` }
-          ]
-        }
+      // 调用 Cloudflare 后端 API 进行作文诊断 (OCR + 分析)
+      const response = await fetch('/api/analyze_essay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images: essayImages, title: essayTitle })
       });
+
+      if (!response.ok) throw new Error('作文分析失败');
+      const data = await response.json();
 
       const result: WritingAnalysis = {
         id: Date.now().toString(),
         studentId: user!.uid,
         title: essayTitle,
         transcription: "已包含在诊断报告中",
-        analysis: response.text || "分析失败",
+        analysis: data.text || "分析失败",
         date: new Date().toISOString()
       };
 
@@ -254,7 +231,7 @@ export default function App() {
           title: result.title,
           transcription: result.transcription,
           analysis: result.analysis,
-          score: 45 // 示例分数，实际可从 AI 返回的 JSON 中解析
+          score: 45 
         })
       });
 
