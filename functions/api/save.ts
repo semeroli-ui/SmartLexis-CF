@@ -1,23 +1,26 @@
-export const onRequestGet = async (context: any) => {
+export const onRequest = async (context: any) => {
   const { env, request } = context;
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
+  
   if (!env.DB) {
     return new Response(JSON.stringify({ error: "D1 数据库未配置，请在 Cloudflare 控制台绑定数据库。" }), { 
       status: 500,
       headers: { "Content-Type": "application/json" }
     });
   }
-  const url = new URL(request.url);
-  const studentId = url.searchParams.get("studentId");
-
-  if (!studentId) return new Response("Missing studentId", { status: 400 });
-
   try {
-    // 从 D1 查询最近 10 条记录
-    const { results } = await env.DB.prepare(
-      "SELECT id, student_id as studentId, essay_title as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
-    ).bind(studentId).all();
+    const data = await request.json();
+    const { studentId, title, transcription, analysis, score } = data;
 
-    return new Response(JSON.stringify(results), {
+    // 将数据插入 D1 数据库
+    // 注意：字段名需与您的 schema.sql 保持一致
+    await env.DB.prepare(
+      "INSERT INTO writing_analyses (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
+    ).bind(studentId, title, transcription, analysis, score).run();
+
+    return new Response(JSON.stringify({ success: true }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
