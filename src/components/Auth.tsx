@@ -62,24 +62,19 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#f5f2ed]">
-      {/* 背景装饰：水墨山水背景图 */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-60 mix-blend-multiply"
-        style={{ 
-          backgroundImage: `url('https://images.unsplash.com/photo-1508804185872-d7badad00f7d?q=80&w=2000&auto=format&fit=crop')`,
-          filter: 'grayscale(100%) contrast(110%)'
-        }}
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-900">
+      {/* 高清背景图 */}
+      <img 
+        src="https://imagebed.eu.cc/file/1773269643566_freenaturestock-1932.jpg"
+        alt="Background"
+        className="absolute inset-0 w-full h-full object-cover z-0"
+        referrerPolicy="no-referrer"
       />
       
-      {/* 宣纸纹理叠加 */}
-      <div className="absolute inset-0 z-[1] opacity-20 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]" />
+      {/* 柔和的叠加层，确保文字可读性但不遮挡高清感 */}
+      <div className="absolute inset-0 z-[1] bg-black/10 backdrop-brightness-95" />
 
-      {/* 漂浮的墨迹装饰 */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-slate-900/10 blur-[100px] rounded-full animate-pulse" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-slate-800/5 blur-[120px] rounded-full" />
-
-      <div className="max-w-md w-full bg-white/70 backdrop-blur-xl rounded-[40px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] border border-white/40 overflow-hidden relative z-10 animate-in zoom-in-95 duration-700">
+      <div className="max-w-md w-full bg-white/60 backdrop-blur-2xl rounded-[40px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.3)] border border-white/30 overflow-hidden relative z-10 animate-in zoom-in-95 duration-700">
         <div className="bg-slate-900/95 p-12 text-center text-white relative overflow-hidden">
           {/* 动态背景装饰 */}
           <div className="absolute inset-0 opacity-10">
