@@ -16,7 +16,6 @@ import {
   ArrowUpRight, ArrowDownRight, Upload, Loader2, LogOut, Image as ImageIcon,
   FileText, History
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Auth from './components/Auth';
@@ -159,6 +158,15 @@ export default function App() {
     }
     setAuthLoading(false);
   }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem('lexis_user');
+    setUser(null);
+    setSelectedStudentId(null);
+    setAiPrescription(null);
+    setEssayAnalysis(null);
+    setAnalysisHistory([]);
+  };
 
   const fetchAnalysisHistory = async (uid: string) => {
     try {
