@@ -135,6 +135,7 @@ export default function App() {
   const [practiceContent, setPracticeContent] = useState<string | null>(null);
   const [upgradedEssay, setUpgradedEssay] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isTTSLoading, setIsTTSLoading] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
 
   // Essay Analysis States
@@ -232,25 +233,46 @@ export default function App() {
       return;
     }
 
-    setIsPlayingAudio(true);
+    if (isTTSLoading) return;
+
+    setIsTTSLoading(true);
+    console.log("Starting TTS request...");
+    
+    // 创建 AbortController 用于超时控制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 延长至 60 秒超时
+
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({ text }),
+        signal: controller.signal
       });
       
+      clearTimeout(timeoutId);
+      console.log("TTS response received, status:", response.status);
+
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-        throw new Error(errorData.error || "服务器响应错误");
+        let errorMessage = `HTTP ${response.status}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          // 如果不是 JSON，尝试获取文本
+          const textError = await response.text().catch(() => "");
+          if (textError) errorMessage += `: ${textError.slice(0, 100)}`;
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
       if (!data.audio) {
-        throw new Error("未收到音频数据，请检查 API 配置");
+        throw new Error("服务器未返回音频数据");
       }
 
-      // 停止之前的音频（如果有）
+      console.log("Audio data received, initializing player...");
+
       if (audioElement) {
         audioElement.pause();
         audioElement.src = "";
@@ -259,29 +281,40 @@ export default function App() {
       const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
       setAudioElement(audio);
       
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(e => {
+      audio.oncanplaythrough = () => {
+        console.log("Audio ready to play");
+        setIsTTSLoading(false);
+        setIsPlayingAudio(true);
+        audio.play().catch(e => {
           console.error("Playback failed:", e);
           setIsPlayingAudio(false);
-          alert("播放失败：浏览器可能阻止了自动播放，请重试。");
+          alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
         });
-      }
+      };
 
       audio.onerror = (e) => {
-        console.error("Audio error:", e);
+        console.error("Audio element error:", e);
+        setIsTTSLoading(false);
         setIsPlayingAudio(false);
-        alert("音频加载失败，可能是格式不正确或数据损坏。");
+        alert("音频加载失败，请检查网络或重试。");
       };
 
       audio.onended = () => {
+        console.log("Audio playback ended");
         setIsPlayingAudio(false);
       };
 
     } catch (error: any) {
+      clearTimeout(timeoutId);
       console.error("TTS error:", error);
-      alert(`朗读失败: ${error.message}`);
+      setIsTTSLoading(false);
       setIsPlayingAudio(false);
+      
+      if (error.name === 'AbortError') {
+        alert("朗读请求超时，请检查您的网络连接或稍后重试。");
+      } else {
+        alert(`朗读失败: ${error.message}\n\n提示：请确保已在 Cloudflare 后端配置了 GEMINI_API_KEY。`);
+      }
     }
   };
 
@@ -531,13 +564,16 @@ export default function App() {
                       <div className="flex justify-end gap-3 no-print">
                         <button 
                           onClick={() => playTTS(upgradedEssay)}
+                          disabled={isTTSLoading}
                           className={cn(
                             "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            isPlayingAudio ? "bg-rose-500 text-white" : "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
+                            isPlayingAudio ? "bg-rose-500 text-white" : 
+                            isTTSLoading ? "bg-slate-400 text-white cursor-not-allowed" :
+                            "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
                           )}
                         >
-                          {isPlayingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-                          {isPlayingAudio ? "停止朗读" : "范文朗读 (AI)"}
+                          {(isPlayingAudio || isTTSLoading) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                          {isPlayingAudio ? "停止朗读" : isTTSLoading ? "正在生成语音..." : "范文朗读 (AI)"}
                         </button>
                       </div>
                       <div className="prose prose-indigo max-w-none">
