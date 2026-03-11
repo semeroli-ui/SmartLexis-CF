@@ -2,9 +2,17 @@ import { GoogleGenAI } from "@google/genai";
 
 export const onRequestPost = async (context: any) => {
   const { env, request } = context;
-  const apiKey = env.GEMINI_API_KEY;
-
-  if (!apiKey) return new Response(JSON.stringify({ error: "API Key missing in Cloudflare environment variables" }), { status: 500 });
+  
+  // 处理多 API Key：支持逗号分隔，随机选择一个
+  const rawKeys = env.GEMINI_API_KEY || "";
+  const keys = rawKeys.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+  
+  if (keys.length === 0) {
+    return new Response(JSON.stringify({ error: "API Key missing in environment" }), { status: 500 });
+  }
+  
+  // 随机选择一个 Key
+  const apiKey = keys[Math.floor(Math.random() * keys.length)];
 
   try {
     const { images, title } = await request.json();
@@ -22,15 +30,7 @@ export const onRequestPost = async (context: any) => {
       contents: {
         parts: [
           ...imageParts,
-          { text: `你是一位资深的语文阅卷专家。请对题目为《${title}》的手写作文图片进行深度诊断。
-          
-          请严格执行以下任务：
-          1. **全文转录 (OCR)**：请务必字斟句酌，完整、准确地转录图片中的所有手写文字。
-          2. **综合评分**：满分50分（按中高考作文标准）。
-          3. **维度评价**：从立意、结构、语言、素材四个维度进行深度点评。
-          4. **改进建议**：给出具体的修改方向和范文参考。
-          
-          请直接输出 Markdown 格式的诊断报告。` }
+          { text: `你是一位资深的语文阅卷专家。请对题目为《${title}》的手写作文图片进行深度诊断。请提供：1. 全文转录（OCR）；2. 综合评分（满分50）；3. 维度评价；4. 改进建议。请使用 Markdown 格式。` }
         ]
       }
     });
@@ -39,6 +39,6 @@ export const onRequestPost = async (context: any) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    return new Response(JSON.stringify({ error: err.message, detail: "Check if your API keys are valid" }), { status: 500 });
   }
 };

@@ -2,26 +2,23 @@ import { GoogleGenAI } from "@google/genai";
 
 export const onRequestPost = async (context: any) => {
   const { env, request } = context;
-  const apiKey = env.GEMINI_API_KEY;
-
-  if (!apiKey) return new Response(JSON.stringify({ error: "API Key missing" }), { status: 500 });
+  
+  // 处理多 API Key：支持逗号分隔，随机选择一个
+  const rawKeys = env.GEMINI_API_KEY || "";
+  const keys = rawKeys.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
+  
+  if (keys.length === 0) {
+    return new Response(JSON.stringify({ error: "API Key missing" }), { status: 500 });
+  }
+  
+  const apiKey = keys[Math.floor(Math.random() * keys.length)];
 
   try {
     const { student } = await request.json();
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `你是一位资深的语文教育专家。请根据以下学生的考试数据，提供一份详细的学情诊断和学习建议（约300字）。
-      学生姓名：${student.name}
-      总分：${student.total} / 150
-      各项得分：
-      - 选择题：${student.choice} / 30
-      - 现代文阅读：${student.modernReading} / 30
-      - 文言文阅读：${student.classicReading} / 20
-      - 非连续性文本：${student.nonLinear} / 10
-      - 默写填空：${student.dictation} / 10
-      - 作文：${student.composition} / 50
-      请从核心素养（语言建构、思维发展、审美鉴赏、文化传承、表达创作）的角度进行分析，并给出具体的提升路径。请使用 Markdown 格式。`,
+      contents: `分析学生 ${student.name} 的语文成绩：总分 ${student.total}。请给出 300 字以内的 Markdown 格式诊断建议。`,
     });
 
     return new Response(JSON.stringify({ text: response.text }), {
