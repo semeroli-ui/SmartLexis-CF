@@ -1,7 +1,10 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
-export const onRequestPost = async (context: any) => {
+export const onRequest = async (context: any) => {
   const { env, request } = context;
+  if (request.method !== "POST") {
+    return new Response("Method Not Allowed", { status: 405 });
+  }
   const rawKeys = env.GEMINI_API_KEY || "";
   const keys = rawKeys.split(',').map((k: string) => k.trim()).filter((k: string) => k.length > 0);
   
@@ -17,7 +20,14 @@ export const onRequestPost = async (context: any) => {
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `请用标准、富有情感的中文朗读以下范文：${cleanText}` }] }],
+      contents: [{ 
+        parts: [{ 
+          text: `你是一位专业的中文播音员，声音温润儒雅，充满书卷气。请用标准普通话、优美的语调和恰当的情感起伏，朗读以下这篇优秀的语文范文。注意语速适中，吐字清晰，在句末和段落间留出自然的停顿，展现出文章的文学韵味和思想深度。
+
+范文内容如下：
+${cleanText}` 
+        }] 
+      }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
