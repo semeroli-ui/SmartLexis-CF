@@ -1,5 +1,11 @@
 export const onRequestPost = async (context: any) => {
   const { env, request } = context;
+  if (!env.DB) {
+    return new Response(JSON.stringify({ error: "D1 数据库未配置，请在 Cloudflare 控制台绑定数据库。" }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
   try {
     const data = await request.json();
     const { studentId, title, transcription, analysis, score } = data;
