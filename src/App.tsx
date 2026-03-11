@@ -224,10 +224,14 @@ export default function App() {
 
   const playTTS = async (text: string) => {
     if (isPlayingAudio) {
-      audioElement?.pause();
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.currentTime = 0;
+      }
       setIsPlayingAudio(false);
       return;
     }
+
     setIsPlayingAudio(true);
     try {
       const response = await fetch('/api/tts', {
@@ -235,13 +239,48 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
       });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+        throw new Error(errorData.error || "服务器响应错误");
+      }
+
       const data = await response.json();
-      const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+      if (!data.audio) {
+        throw new Error("未收到音频数据，请检查 API 配置");
+      }
+
+      // 停止之前的音频（如果有）
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.src = "";
+      }
+
+      const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
       setAudioElement(audio);
-      audio.play();
-      audio.onended = () => setIsPlayingAudio(false);
-    } catch (error) {
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          console.error("Playback failed:", e);
+          setIsPlayingAudio(false);
+          alert("播放失败：浏览器可能阻止了自动播放，请重试。");
+        });
+      }
+
+      audio.onerror = (e) => {
+        console.error("Audio error:", e);
+        setIsPlayingAudio(false);
+        alert("音频加载失败，可能是格式不正确或数据损坏。");
+      };
+
+      audio.onended = () => {
+        setIsPlayingAudio(false);
+      };
+
+    } catch (error: any) {
       console.error("TTS error:", error);
+      alert(`朗读失败: ${error.message}`);
       setIsPlayingAudio(false);
     }
   };
@@ -304,7 +343,7 @@ export default function App() {
       };
 
       // 调用 Cloudflare 后端 API 保存到 D1
-      await fetch('/api/save', {
+      const saveResponse = await fetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -315,6 +354,11 @@ export default function App() {
           score: 45 
         })
       });
+
+      if (!saveResponse.ok) {
+        const saveError = await saveResponse.json().catch(() => ({ error: "保存到历史记录失败" }));
+        console.warn("Save analysis warning:", saveError.error);
+      }
 
       setEssayAnalysis(result);
       fetchAnalysisHistory(user!.uid);
