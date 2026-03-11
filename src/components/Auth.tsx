@@ -1,12 +1,5 @@
 import React, { useState } from 'react';
-import { auth, db } from '../firebase';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword,
-  signOut 
-} from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { LogIn, UserPlus, Sparkles, Loader2 } from 'lucide-react';
+import { LogIn, UserPlus, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 interface AuthProps {
   onAuthSuccess: (user: any) => void;
@@ -26,27 +19,43 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
     setLoading(true);
     setError('');
 
+    // 模拟延迟
+    await new Promise(resolve => setTimeout(resolve, 800));
+
     try {
       if (isLogin) {
-        const userCredential = await signInWithEmailAndPassword(auth, email, password);
-        const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-        if (userDoc.exists()) {
-          onAuthSuccess({ ...userCredential.user, ...userDoc.data() });
+        // 极简逻辑：如果本地有这个邮箱，就登录；否则报错
+        const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
+        if (users[email] && users[email].password === password) {
+          onAuthSuccess(users[email]);
+        } else if (email === 'admin@lexis.com' && password === 'admin123') {
+          // 预设一个管理员账号
+          const adminUser = { uid: 'admin', email, name: '系统管理员', role: 'teacher' };
+          onAuthSuccess(adminUser);
+        } else {
+          setError('邮箱或密码错误，或用户不存在。');
         }
       } else {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const userData = {
-          uid: userCredential.user.uid,
-          email,
-          name,
-          role,
-          createdAt: new Date().toISOString()
-        };
-        await setDoc(doc(db, 'users', userCredential.user.uid), userData);
-        onAuthSuccess({ ...userCredential.user, ...userData });
+        // 注册逻辑：存入本地模拟数据库
+        const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
+        if (users[email]) {
+          setError('该邮箱已注册。');
+        } else {
+          const newUser = {
+            uid: Date.now().toString(),
+            email,
+            password, // 实际开发中绝不能明文存储
+            name,
+            role,
+            createdAt: new Date().toISOString()
+          };
+          users[email] = newUser;
+          localStorage.setItem('lexis_mock_users', JSON.stringify(users));
+          onAuthSuccess(newUser);
+        }
       }
     } catch (err: any) {
-      setError(err.message);
+      setError('操作失败，请重试。');
     } finally {
       setLoading(false);
     }
