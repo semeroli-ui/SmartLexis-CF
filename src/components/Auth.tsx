@@ -62,33 +62,48 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FDF6E3] flex items-center justify-center p-4 relative overflow-hidden">
-      {/* 背景装饰：水墨山水意向 */}
-      <div className="absolute inset-0 opacity-10 pointer-events-none">
-        <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <path d="M0 100 C 20 80, 40 90, 60 70 S 80 80, 100 60 L 100 100 Z" fill="#1e293b" />
-          <path d="M0 100 C 10 90, 30 95, 50 85 S 70 90, 100 75 L 100 100 Z" fill="#2d3748" />
-        </svg>
-      </div>
-      <div className="absolute top-10 right-10 w-32 h-32 border border-slate-200 rounded-full opacity-20 animate-pulse" />
-      <div className="absolute bottom-10 left-10 w-48 h-48 border-2 border-slate-200 rounded-full opacity-10" />
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#f5f2ed]">
+      {/* 背景装饰：水墨山水背景图 */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-60 mix-blend-multiply"
+        style={{ 
+          backgroundImage: `url('https://images.unsplash.com/photo-1508804185872-d7badad00f7d?q=80&w=2000&auto=format&fit=crop')`,
+          filter: 'grayscale(100%) contrast(110%)'
+        }}
+      />
+      
+      {/* 宣纸纹理叠加 */}
+      <div className="absolute inset-0 z-[1] opacity-20 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/paper-fibers.png')]" />
 
-      <div className="max-w-md w-full bg-white/80 backdrop-blur-md rounded-3xl shadow-2xl border border-white/50 overflow-hidden relative z-10">
-        <div className="bg-[#1E293B] p-10 text-center text-white relative">
-          {/* 印章装饰 */}
-          <div className="absolute top-4 right-4 w-8 h-8 border-2 border-[#C0392B] flex items-center justify-center text-[#C0392B] font-serif text-[10px] leading-none rotate-12 bg-white/5">
+      {/* 漂浮的墨迹装饰 */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-slate-900/10 blur-[100px] rounded-full animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-slate-800/5 blur-[120px] rounded-full" />
+
+      <div className="max-w-md w-full bg-white/70 backdrop-blur-xl rounded-[40px] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] border border-white/40 overflow-hidden relative z-10 animate-in zoom-in-95 duration-700">
+        <div className="bg-slate-900/95 p-12 text-center text-white relative overflow-hidden">
+          {/* 动态背景装饰 */}
+          <div className="absolute inset-0 opacity-10">
+            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <path d="M0 100 C 20 80, 40 90, 60 70 S 80 80, 100 60 L 100 100 Z" fill="white" />
+            </svg>
+          </div>
+
+          {/* 红色印章 - 更加精致 */}
+          <div className="absolute top-6 right-6 w-10 h-10 border-[3px] border-[#C0392B] flex items-center justify-center text-[#C0392B] font-serif text-[11px] font-bold leading-none rotate-6 bg-white/10 shadow-[0_0_15px_rgba(192,57,43,0.3)] select-none">
             智<br/>语
           </div>
           
-          <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6 backdrop-blur-sm border border-white/20 shadow-inner">
-            <Sparkles className="w-10 h-10 text-indigo-300" />
+          <div className="w-24 h-24 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-8 backdrop-blur-md border border-white/20 shadow-2xl relative group">
+            <div className="absolute inset-0 bg-indigo-500/20 rounded-full blur-xl group-hover:bg-indigo-500/40 transition-all" />
+            <Sparkles className="w-12 h-12 text-indigo-200 relative z-10" />
           </div>
-          <h1 className="text-3xl font-serif font-bold tracking-widest mb-2">智语 · SmartLexis</h1>
-          <div className="h-px w-12 bg-indigo-400/50 mx-auto mb-3" />
-          <p className="text-indigo-100/80 text-sm font-medium tracking-loose">博观而约取 · 厚积而薄发</p>
+          
+          <h1 className="text-4xl font-serif font-bold tracking-[0.2em] mb-3 drop-shadow-lg">智语 · SmartLexis</h1>
+          <div className="h-0.5 w-16 bg-gradient-to-r from-transparent via-indigo-400 to-transparent mx-auto mb-4" />
+          <p className="text-indigo-100/70 text-sm font-light tracking-[0.15em] italic">博观而约取 · 厚积而薄发</p>
         </div>
 
-        <div className="p-10">
+        <div className="p-12">
           <div className="flex gap-6 mb-10 relative">
             <button 
               onClick={() => setIsLogin(true)}

@@ -130,6 +130,14 @@ export default function App() {
   const [aiPrescription, setAiPrescription] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Action States
+  const [activeAction, setActiveAction] = useState<'practice' | 'essay' | 'graph' | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [practiceContent, setPracticeContent] = useState<string | null>(null);
+  const [upgradedEssay, setUpgradedEssay] = useState<string | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+
   // Essay Analysis States
   const [essayImages, setEssayImages] = useState<string[]>([]);
   const [essayTitle, setEssayTitle] = useState('');
@@ -164,9 +172,74 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('lexis_user');
-    setUser(null);
+  // --- Action Handlers ---
+  const fetchPractice = async () => {
+    if (!selectedStudent) return;
+    setIsActionLoading(true);
+    setActiveAction('practice');
+    try {
+      const response = await fetch('/api/generate_practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentScore: selectedStudent })
+      });
+      const data = await response.json();
+      setPracticeContent(data.text);
+    } catch (error) {
+      console.error("Practice generation error:", error);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const fetchUpgradedEssay = async () => {
+    if (!essayAnalysis) {
+      alert("请先完成作文诊断");
+      return;
+    }
+    setIsActionLoading(true);
+    setActiveAction('essay');
+    try {
+      const response = await fetch('/api/upgrade_essay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ essayText: essayAnalysis.analysis, title: essayAnalysis.title })
+      });
+      const data = await response.json();
+      setUpgradedEssay(data.text);
+    } catch (error) {
+      console.error("Essay upgrade error:", error);
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const playTTS = async (text: string) => {
+    if (isPlayingAudio) {
+      audioElement?.pause();
+      setIsPlayingAudio(false);
+      return;
+    }
+    setIsPlayingAudio(true);
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const data = await response.json();
+      const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+      setAudioElement(audio);
+      audio.play();
+      audio.onended = () => setIsPlayingAudio(false);
+    } catch (error) {
+      console.error("TTS error:", error);
+      setIsPlayingAudio(false);
+    }
+  };
+
+  const exportToPDF = () => {
+    window.print();
   };
 
   // --- AI Analysis ---
@@ -358,7 +431,134 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans">
-      {/* Sidebar */}
+      {/* Modals for Actions */}
+      {activeAction && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
+            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-[32px]">
+              <div>
+                <h3 className="text-2xl font-serif font-bold text-slate-900 flex items-center gap-3">
+                  {activeAction === 'practice' && <><Target className="text-indigo-600" /> 专项提分练习</>}
+                  {activeAction === 'essay' && <><Award className="text-emerald-600" /> 范文升格赏析</>}
+                  {activeAction === 'graph' && <><BrainCircuit className="text-indigo-600" /> 核心素养图谱</>}
+                </h3>
+                <p className="text-slate-500 text-sm mt-1">基于 AI 诊断结果生成的个性化提升方案</p>
+              </div>
+              <button 
+                onClick={() => { setActiveAction(null); setPracticeContent(null); setUpgradedEssay(null); audioElement?.pause(); }}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <AlertCircle className="w-6 h-6 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-8 overflow-y-auto flex-1 print:p-0">
+              {isActionLoading ? (
+                <div className="py-20 flex flex-col items-center justify-center gap-4">
+                  <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+                  <p className="text-slate-500 font-medium animate-pulse">AI 正在为您精心准备内容...</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {activeAction === 'practice' && practiceContent && (
+                    <div className="prose prose-indigo max-w-none print:prose-sm">
+                      <div className="flex justify-end mb-4 no-print">
+                        <button 
+                          onClick={exportToPDF}
+                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200"
+                        >
+                          <Download className="w-4 h-4" /> 导出 PDF 打印
+                        </button>
+                      </div>
+                      <ReactMarkdown>{practiceContent}</ReactMarkdown>
+                    </div>
+                  )}
+
+                  {activeAction === 'essay' && upgradedEssay && (
+                    <div className="space-y-8">
+                      <div className="flex justify-end gap-3 no-print">
+                        <button 
+                          onClick={() => playTTS(upgradedEssay)}
+                          className={cn(
+                            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                            isPlayingAudio ? "bg-rose-500 text-white" : "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
+                          )}
+                        >
+                          {isPlayingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                          {isPlayingAudio ? "停止朗读" : "范文朗读 (AI)"}
+                        </button>
+                      </div>
+                      <div className="prose prose-indigo max-w-none">
+                        <ReactMarkdown>{upgradedEssay}</ReactMarkdown>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeAction === 'graph' && (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                        <div className="h-80 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({
+                              ...d,
+                              avg: [82, 75, 78, 70, 72][i]
+                            }))}>
+                              <PolarGrid stroke="#e2e8f0" />
+                              <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
+                              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                              <Radar name="个人" dataKey="value" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.3} />
+                              <Radar name="全班平均" dataKey="avg" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.1} strokeDasharray="4 4" />
+                              <Tooltip />
+                              <Legend />
+                            </RadarChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="space-y-4">
+                          <h4 className="font-bold text-slate-800">维度分析说明</h4>
+                          <div className="space-y-3">
+                            {[
+                              { label: '语言建构', desc: '词汇运用、语法规范、表达流畅度' },
+                              { label: '思维发展', desc: '逻辑严密性、批判性思维、推理能力' },
+                              { label: '审美鉴赏', desc: '文学修辞感知、情感共鸣、审美评价' },
+                              { label: '文化传承', desc: '传统文化理解、文言底蕴、文化自信' },
+                              { label: '表达创作', desc: '写作技巧、立意深度、素材整合' },
+                            ].map(dim => (
+                              <div key={dim.label} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <span className="text-xs font-bold text-indigo-600 block mb-1">{dim.label}</span>
+                                <p className="text-[10px] text-slate-500">{dim.desc}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-6 border-t border-slate-100 text-center no-print">
+              <button 
+                onClick={() => { setActiveAction(null); setPracticeContent(null); setUpgradedEssay(null); audioElement?.pause(); }}
+                className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all"
+              >
+                完成学习
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Print Styles */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: white !important; }
+          .print\\:p-0 { padding: 0 !important; }
+          aside, header, nav { display: none !important; }
+          main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+        }
+      `}</style>
       <aside className="fixed top-0 left-0 h-full w-64 bg-slate-900 text-white hidden lg:flex flex-col p-6 z-50">
         <div className="flex items-center gap-3 mb-10 px-2">
           <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -745,21 +945,30 @@ export default function App() {
                   <div className="w-full md:w-72 space-y-4">
                     <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">推荐行动路径</h4>
                     <div className="space-y-3">
-                      <button className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group">
+                      <button 
+                        onClick={fetchPractice}
+                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-bold text-slate-900">专项练习</span>
                           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
                         </div>
                         <p className="text-xs text-slate-500">针对薄弱项的精选试题集</p>
                       </button>
-                      <button className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group">
+                      <button 
+                        onClick={fetchUpgradedEssay}
+                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-bold text-slate-900">范文赏析</span>
                           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
                         </div>
                         <p className="text-xs text-slate-500">高分作文与名家名篇推荐</p>
                       </button>
-                      <button className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group">
+                      <button 
+                        onClick={() => setActiveAction('graph')}
+                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
+                      >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-bold text-slate-900">知识图谱</span>
                           <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
@@ -775,18 +984,30 @@ export default function App() {
               <Card title="核心素养维度" subtitle="基于 6 大题型加权计算">
                 <div className="h-[320px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent)}>
+                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({
+                      ...d,
+                      avg: [82, 75, 78, 70, 72][i] // Mock class average
+                    }))}>
                       <PolarGrid stroke="#e2e8f0" />
                       <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
                       <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                       <Radar
-                        name="得分率"
+                        name="个人得分率"
                         dataKey="value"
                         stroke="#4f46e5"
                         fill="#4f46e5"
                         fillOpacity={0.3}
                       />
+                      <Radar
+                        name="全班平均"
+                        dataKey="avg"
+                        stroke="#94a3b8"
+                        fill="#94a3b8"
+                        fillOpacity={0.1}
+                        strokeDasharray="4 4"
+                      />
                       <Tooltip contentStyle={{borderRadius: '12px'}} />
+                      <Legend verticalAlign="bottom" />
                     </RadarChart>
                   </ResponsiveContainer>
                 </div>
