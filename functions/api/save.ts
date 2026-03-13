@@ -16,9 +16,21 @@ export const onRequest = async (context: any) => {
 
     // 将数据插入 D1 数据库
     // 注意：字段名需与您的 schema.sql 保持一致
-    await env.DB.prepare(
-      "INSERT INTO writing_analyses (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
-    ).bind(studentId, title, transcription, analysis, score).run();
+    try {
+      await env.DB.prepare(
+        "INSERT INTO writing_analyses (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
+      ).bind(studentId, title, transcription, analysis, score).run();
+    } catch (dbErr: any) {
+      console.error("D1 Insert Error:", dbErr.message);
+      // Fallback if essay_title column is missing (old schema)
+      if (dbErr.message.includes("no column named essay_title")) {
+        await env.DB.prepare(
+          "INSERT INTO writing_analyses (student_id, transcription, analysis_content, score) VALUES (?, ?, ?, ?)"
+        ).bind(studentId, transcription, analysis, score).run();
+      } else {
+        throw dbErr;
+      }
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { "Content-Type": "application/json" },
