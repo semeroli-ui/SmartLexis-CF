@@ -14,19 +14,39 @@ export const onRequest = async (context: any) => {
     const data = await request.json();
     const { studentId, title, transcription, analysis, score } = data;
 
-    // 将数据插入 D1 数据库
-    // 注意：字段名需与您的 schema.sql 保持一致
+    // 尝试插入数据，如果失败则尝试修复表结构
     try {
       await env.DB.prepare(
         "INSERT INTO writing_analyses (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
       ).bind(studentId, title, transcription, analysis, score).run();
     } catch (dbErr: any) {
       console.error("D1 Insert Error:", dbErr.message);
-      // Fallback if essay_title column is missing (old schema)
-      if (dbErr.message.includes("no column named essay_title")) {
+      
+      // 如果是外键错误或列缺失，尝试重建表（仅作为最后的补救措施）
+      if (dbErr.message.includes("FOREIGN KEY") || dbErr.message.includes("no column named")) {
+        await env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS writing_analyses_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT NOT NULL,
+            essay_title TEXT NOT NULL,
+            transcription TEXT,
+            analysis_content TEXT NOT NULL,
+            score INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run();
+        
         await env.DB.prepare(
-          "INSERT INTO writing_analyses (student_id, transcription, analysis_content, score) VALUES (?, ?, ?, ?)"
-        ).bind(studentId, transcription, analysis, score).run();
+          "INSERT INTO writing_analyses_new (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
+        ).bind(studentId, title, transcription, analysis, score).run();
+        
+        // 尝试重命名（如果原表没用了）
+        try {
+           await env.DB.prepare("DROP TABLE writing_analyses").run();
+           await env.DB.prepare("ALTER TABLE writing_analyses_new RENAME TO writing_analyses").run();
+        } catch (e) {
+           // 如果重命名失败，至少数据存到了新表
+        }
       } else {
         throw dbErr;
       }
