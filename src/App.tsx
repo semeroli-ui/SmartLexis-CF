@@ -243,7 +243,13 @@ export default function App() {
     if (preGeneratedAudio && shouldPlayWhenReady) {
       setShouldPlayWhenReady(false);
       setIsTTSLoading(false);
-      playAudioFromBase64(preGeneratedAudio);
+      const binaryString = window.atob(preGeneratedAudio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      playAudioFromBlob(blob);
     }
   }, [preGeneratedAudio, shouldPlayWhenReady]);
 
@@ -279,10 +285,16 @@ export default function App() {
     
     // 提取“升格范文”部分的内容，只朗读正文
     let textToRead = text;
-    // 兼容多种可能的范文标题格式
-    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|$)/i);
-    if (essayMatch && essayMatch[1]) {
+    const essayRegex = /(?:^|\n)(?:#\s*)?(?:【?\s*升格(?:版)?范文\s*】?|(?:\d\.|[一二三])\s*升格(?:版)?范文)(?:\s*\n|[:：\s])([\s\S]*?)(?=\n\n(?:【|(?:\d\.|[一二三])\.)|\n\n亮点解析|\n\n升格解析|$)/i;
+    
+    const essayMatch = text.match(essayRegex);
+    if (essayMatch && essayMatch[1] && essayMatch[1].trim().length > 10) {
       textToRead = essayMatch[1].trim();
+    } else {
+      const looseMatch = text.match(/(?:【?升格(?:版)?范文】?|升格版范文)([\s\S]*?)(?=【|亮点解析|升格解析|$)/i);
+      if (looseMatch && looseMatch[1] && looseMatch[1].trim().length > 20) {
+        textToRead = looseMatch[1].trim();
+      }
     }
 
     if (preGenerateAbortControllerRef.current) {
@@ -294,54 +306,40 @@ export default function App() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead }),
+        body: JSON.stringify({ text: textToRead.slice(0, 600) }),
         signal: preGenerateAbortControllerRef.current.signal
       });
       
       if (response.ok) {
-        const data = await response.json();
-        if (data.audio) {
-          setPreGeneratedAudio(data.audio);
-        } else if (shouldPlayWhenReady) {
-          throw new Error("未收到音频数据");
+        const blob = await response.blob();
+        if (blob.size > 100) {
+          // Convert blob to base64 to store in state
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = (reader.result as string).split(',')[1];
+            setPreGeneratedAudio(base64data);
+          };
+          reader.readAsDataURL(blob);
         }
-      } else if (shouldPlayWhenReady) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `HTTP ${response.status}`);
       }
     } catch (error: any) {
       if (error.name === 'AbortError') return;
       console.error("Pre-generation TTS error:", error);
-      if (shouldPlayWhenReady) {
-        setIsTTSLoading(false);
-        setShouldPlayWhenReady(false);
-        alert(`语音准备失败: ${error.message}`);
-      }
     } finally {
       setIsPreGenerating(false);
       preGenerateAbortControllerRef.current = null;
     }
   };
 
-  const playAudioFromBase64 = (base64: string) => {
-    console.log("Preparing to play audio, base64 length:", base64.length);
+  const playAudioFromBlob = (blob: Blob) => {
+    console.log("Preparing to play audio from blob, size:", blob.size);
     setIsTTSLoading(true);
     
     // Clean up previous audio resources synchronously
     stopAudio();
 
     try {
-      const binaryString = window.atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      // The backend (api/tts.ts) already adds the WAV header.
-      // We just need to create the blob and play it.
-      const blob = new Blob([bytes], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
-      
       const audio = new Audio(url);
       audioRef.current = audio;
       
@@ -385,7 +383,7 @@ export default function App() {
       };
 
     } catch (err) {
-      console.error("Error creating Audio object:", err);
+      console.error("Error creating Audio object from blob:", err);
       setIsTTSLoading(false);
       setIsPlayingAudio(false);
       alert("处理音频数据失败。");
@@ -454,7 +452,16 @@ export default function App() {
     }
 
     if (preGeneratedAudio) {
-      playAudioFromBase64(preGeneratedAudio);
+      // Convert base64 back to blob if needed, or just keep it as blob in state
+      // For now, assume we'll just re-fetch or handle pre-generation separately
+      // Let's simplify: if we have it, play it.
+      const binaryString = window.atob(preGeneratedAudio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      playAudioFromBlob(blob);
       return;
     }
 
@@ -494,34 +501,35 @@ export default function App() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead }),
+        body: JSON.stringify({ text: textToRead.slice(0, 600) }),
         signal: ttsAbortControllerRef.current.signal
       });
       
       console.log("TTS response received, status:", response.status);
 
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-        let details = "";
+        let errorMessage = `服务器响应异常 (${response.status})`;
         try {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
-          details = errorData.details || "";
         } catch (e) {
-          const textError = await response.text().catch(() => "");
-          if (textError) errorMessage += `: ${textError.slice(0, 100)}`;
+          // 处理非 JSON 错误（如 502/504 超时）
+          if (response.status === 502 || response.status === 504) {
+            errorMessage = "服务器响应超时。由于范文较长，AI 生成语音需要较长时间，请稍后再试或尝试缩短范文。";
+          }
         }
-        throw new Error(`${errorMessage}${details ? `\n\n详情: ${details}` : ""}`);
+        throw new Error(errorMessage);
       }
 
-      const data = await response.json();
-      if (!data.audio) {
-        throw new Error("服务器未返回音频数据");
+      console.log("TTS response received, status:", response.status);
+      const blob = await response.blob();
+      
+      if (blob.size > 100) {
+        console.log("Audio data received, size:", blob.size, "initializing player...");
+        playAudioFromBlob(blob);
+      } else {
+        throw new Error("接收到的音频数据无效或太短");
       }
-
-      console.log("Audio data received, initializing player...");
-      setPreGeneratedAudio(data.audio);
-      playAudioFromBase64(data.audio);
 
     } catch (error: any) {
       if (error.name === 'AbortError') {
