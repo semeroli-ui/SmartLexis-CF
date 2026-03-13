@@ -18,8 +18,8 @@ export const onRequest = async (context: any) => {
     // Clean text for TTS (remove markdown symbols)
     const cleanText = text.replace(/[#*`>]/g, '');
     
-    const ttsPrompt = `你现在是一位专业的广播电视主持人。请用标准、优美、富有情感的普通话朗读以下范文。
-要求：语速自然，抑扬顿挫，在抒情处婉转，在议论处有力，让学生感受到文字的魅力。
+    const ttsPrompt = `你现在是一位专业的广播电视主持人。请直接开始朗读以下范文内容，严禁任何开场白、自我介绍或结束语。
+要求：用标准、优美、富有情感的普通话，语速自然，抑扬顿挫，在抒情处婉转，在议论处有力。
 
 范文内容如下：
 ${cleanText}`;
