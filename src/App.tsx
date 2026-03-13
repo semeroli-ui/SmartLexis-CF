@@ -463,11 +463,26 @@ export default function App() {
     
     // 提取“升格范文”部分的内容，只朗读正文
     let textToRead = text;
-    // 兼容多种可能的范文标题格式，并排除解析部分
-    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|\n\n升格解析|$)/i);
-    if (essayMatch && essayMatch[1]) {
+    
+    // 更加严谨的正则：匹配独立成行的标题，避免匹配到句子中间的“升格范文”
+    // 1. 匹配 【升格范文】 这种带括号的标题
+    // 2. 匹配 1. 升格版范文 这种带序号的标题
+    // 3. 匹配 升格范文 这种单独占一行的标题
+    const essayRegex = /(?:^|\n)(?:#\s*)?(?:【?\s*升格(?:版)?范文\s*】?|(?:\d\.|[一二三])\s*升格(?:版)?范文)(?:\s*\n|[:：\s])([\s\S]*?)(?=\n\n(?:【|(?:\d\.|[一二三])\.)|\n\n亮点解析|\n\n升格解析|$)/i;
+    
+    const essayMatch = text.match(essayRegex);
+    if (essayMatch && essayMatch[1] && essayMatch[1].trim().length > 10) {
       textToRead = essayMatch[1].trim();
-      console.log("Extracted essay content for reading:", textToRead.slice(0, 20) + "...");
+      console.log("Extracted essay content for reading (Strict Match):", textToRead.slice(0, 30) + "...");
+    } else {
+      // 如果严谨匹配失败，尝试宽松匹配，但排除掉常见的引导语
+      const looseMatch = text.match(/(?:【?升格(?:版)?范文】?|升格版范文)([\s\S]*?)(?=【|亮点解析|升格解析|$)/i);
+      if (looseMatch && looseMatch[1] && looseMatch[1].trim().length > 20) {
+        textToRead = looseMatch[1].trim();
+        console.log("Extracted essay content for reading (Loose Match):", textToRead.slice(0, 30) + "...");
+      } else {
+        console.warn("Could not extract essay content accurately, falling back to full text.");
+      }
     }
 
     if (ttsAbortControllerRef.current) {
@@ -509,10 +524,23 @@ export default function App() {
       playAudioFromBase64(data.audio);
 
     } catch (error: any) {
-      if (error.name === 'AbortError') return;
+      if (error.name === 'AbortError') {
+        console.log("TTS request aborted by user");
+        return;
+      }
       console.error("TTS error:", error);
       setIsTTSLoading(false);
-      alert(`语音生成失败: ${error.message}`);
+      
+      // 尝试解析后端返回的 JSON 错误信息
+      let errorMsg = error.message;
+      try {
+        if (error.message.includes('{')) {
+          const parsed = JSON.parse(error.message.substring(error.message.indexOf('{')));
+          errorMsg = parsed.error || parsed.message || errorMsg;
+        }
+      } catch (e) {}
+      
+      alert(`语音生成失败: ${errorMsg}`);
     } finally {
       ttsAbortControllerRef.current = null;
     }
