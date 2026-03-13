@@ -74,7 +74,14 @@ ${cleanText}`
     combined.set(wavHeader);
     combined.set(pcmData, wavHeader.length);
 
-    const finalBase64 = btoa(Array.from(combined).map(b => String.fromCharCode(b)).join(''));
+    // More robust base64 conversion for large files
+    let binary = '';
+    const bytes = new Uint8Array(combined);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const finalBase64 = btoa(binary);
 
     return new Response(JSON.stringify({ audio: finalBase64 }), {
       headers: { "Content-Type": "application/json" },
