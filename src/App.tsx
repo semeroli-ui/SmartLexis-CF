@@ -243,13 +243,16 @@ export default function App() {
     
     // 创建 AbortController 用于超时控制
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 延长至 60 秒超时
+    const timeoutId = setTimeout(() => controller.abort(), 90000); // 延长至 90 秒超时
 
     try {
+      // 限制发送文本长度，避免过长导致超时
+      const limitedText = text.slice(0, 1000);
+      
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text: limitedText }),
         signal: controller.signal
       });
       
