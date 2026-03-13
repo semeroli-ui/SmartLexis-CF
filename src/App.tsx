@@ -352,15 +352,16 @@ export default function App() {
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}`;
+        let details = "";
         try {
           const errorData = await response.json();
           errorMessage = errorData.error || errorMessage;
+          details = errorData.details || "";
         } catch (e) {
-          // 如果不是 JSON，尝试获取文本
           const textError = await response.text().catch(() => "");
           if (textError) errorMessage += `: ${textError.slice(0, 100)}`;
         }
-        throw new Error(errorMessage);
+        throw new Error(`${errorMessage}${details ? `\n\n详情: ${details}` : ""}`);
       }
 
       const data = await response.json();
@@ -372,7 +373,7 @@ export default function App() {
       setPreGeneratedAudio(data.audio);
       playAudioFromBase64(data.audio);
 
-    } catch (error: any) {
+      } catch (error: any) {
       clearTimeout(timeoutId);
       console.error("TTS error:", error);
       setIsTTSLoading(false);
@@ -380,8 +381,10 @@ export default function App() {
       
       if (error.name === 'AbortError') {
         alert("朗读请求超时，请检查您的网络连接或稍后重试。");
+      } else if (error.message.includes("API Key missing")) {
+        alert("朗读失败：未配置 GEMINI_API_KEY。\n\n请在 Cloudflare 控制台的 Settings -> Variables 中添加 GEMINI_API_KEY 环境变量。");
       } else {
-        alert(`朗读失败: ${error.message}\n\n提示：请确保已在 Cloudflare 后端配置了 GEMINI_API_KEY。`);
+        alert(`朗读失败: ${error.message}\n\n提示：请确保已在 Cloudflare 后端配置了 GEMINI_API_KEY，且网络通畅。`);
       }
     }
   };
