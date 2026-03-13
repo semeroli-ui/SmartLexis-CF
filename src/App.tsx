@@ -143,6 +143,44 @@ export default function App() {
   const ttsAbortControllerRef = useRef<AbortController | null>(null);
   const preGenerateAbortControllerRef = useRef<AbortController | null>(null);
 
+  // Utility to add WAV header to raw PCM data
+  const addWavHeader = (pcmData: Uint8Array, sampleRate: number) => {
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+
+    // RIFF identifier
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    // file length
+    view.setUint32(4, 36 + pcmData.length, true);
+    // RIFF type
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    // format chunk identifier
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    // format chunk length
+    view.setUint32(16, 16, true);
+    // sample format (1 = raw PCM)
+    view.setUint16(20, 1, true);
+    // channel count (1 = mono)
+    view.setUint16(22, 1, true);
+    // sample rate
+    view.setUint32(24, sampleRate, true);
+    // byte rate (sample rate * block align)
+    view.setUint32(28, sampleRate * 2, true);
+    // block align (channel count * bytes per sample)
+    view.setUint16(32, 2, true);
+    // bits per sample
+    view.setUint16(34, 16, true);
+    // data chunk identifier
+    view.setUint32(36, 0x64617461, false); // "data"
+    // data chunk length
+    view.setUint32(40, pcmData.length, true);
+
+    const wavData = new Uint8Array(header.byteLength + pcmData.length);
+    wavData.set(new Uint8Array(header), 0);
+    wavData.set(pcmData, 44);
+    return wavData;
+  };
+
   // Essay Analysis States
   const [essayImages, setEssayImages] = useState<string[]>([]);
   const [essayTitle, setEssayTitle] = useState('');
@@ -294,11 +332,15 @@ export default function App() {
 
     try {
       const binaryString = window.atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
+      const pcmBytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+        pcmBytes[i] = binaryString.charCodeAt(i);
       }
-      const blob = new Blob([bytes], { type: 'audio/wav' });
+      
+      // Gemini TTS returns raw PCM (16-bit, mono, 24kHz). 
+      // We must add a WAV header for the browser Audio element to play it.
+      const wavBytes = addWavHeader(pcmBytes, 24000);
+      const blob = new Blob([wavBytes], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
       
       const audio = new Audio(url);
@@ -319,7 +361,6 @@ export default function App() {
           console.error("Playback failed:", e);
           setIsPlayingAudio(false);
           setIsTTSLoading(false);
-          // 只有在非主动停止的情况下才报错
           if (audioRef.current === audio) {
             alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
           }
@@ -333,7 +374,7 @@ export default function App() {
         if (audioRef.current === audio) {
           setIsTTSLoading(false);
           setIsPlayingAudio(false);
-          alert("音频加载失败，请检查网络或重试。");
+          alert("音频解码或加载失败。请尝试重新生成。");
         }
       };
 
@@ -341,7 +382,6 @@ export default function App() {
         console.log("Audio playback ended naturally");
         if (audioRef.current === audio) {
           setIsPlayingAudio(false);
-          // Keep the current audioRef but mark as not playing
         }
       };
 
@@ -424,8 +464,8 @@ export default function App() {
     
     // 提取“升格范文”部分的内容，只朗读正文
     let textToRead = text;
-    // 兼容多种可能的范文标题格式
-    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|$)/i);
+    // 兼容多种可能的范文标题格式，并排除解析部分
+    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|\n\n升格解析|$)/i);
     if (essayMatch && essayMatch[1]) {
       textToRead = essayMatch[1].trim();
       console.log("Extracted essay content for reading:", textToRead.slice(0, 20) + "...");
@@ -755,12 +795,13 @@ export default function App() {
                           onClick={() => playTTS(upgradedEssay)}
                           className={cn(
                             "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            (isPlayingAudio || isTTSLoading || isPreGenerating) ? "bg-rose-500 text-white" : 
+                            isPlayingAudio ? "bg-rose-500 text-white shadow-lg shadow-rose-200" : 
+                            (isTTSLoading || isPreGenerating) ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : 
                             "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
                           )}
                         >
                           {(isPlayingAudio || isTTSLoading || isPreGenerating) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-                          {isPlayingAudio ? "停止朗读" : (isTTSLoading || isPreGenerating) ? "正在生成/准备 (点击取消)" : "范文朗读 (AI)"}
+                          {isPlayingAudio ? "停止朗读" : (isTTSLoading || isPreGenerating) ? "正在准备播音..." : "范文朗读 (AI)"}
                         </button>
                       </div>
                       <div className="prose prose-indigo max-w-none">
