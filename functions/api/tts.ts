@@ -16,9 +16,13 @@ export const onRequest = async (context: any) => {
     const ai = new GoogleGenAI({ apiKey });
     
     // Clean text for TTS (remove markdown symbols)
-    const cleanText = text.replace(/[#*`>]/g, '').slice(0, 600);
+    const cleanText = text.replace(/[#*`>]/g, '');
     
-    const ttsPrompt = `你是一位极具感染力的语文老师。请用标准、优美、富有情感的普通话朗读以下范文。要求：语速自然，抑扬顿挫，在抒情处婉转，在议论处有力，让学生感受到文字的魅力：\n\n${cleanText}`;
+    const ttsPrompt = `你现在是一位专业的广播电视主持人。请用标准、优美、富有情感的普通话朗读以下范文。
+要求：语速自然，抑扬顿挫，在抒情处婉转，在议论处有力，让学生感受到文字的魅力。
+
+范文内容如下：
+${cleanText}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
