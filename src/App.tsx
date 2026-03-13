@@ -14,7 +14,7 @@ import {
   PenTool, Library, AlertCircle, CheckCircle2, ArrowRight, Users, 
   FileSpreadsheet, Search, Filter, Download, UserCircle, Sparkles,
   ArrowUpRight, ArrowDownRight, Upload, Loader2, LogOut, Image as ImageIcon,
-  FileText, History
+  FileText, History, Square
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -332,15 +332,14 @@ export default function App() {
 
     try {
       const binaryString = window.atob(base64);
-      const pcmBytes = new Uint8Array(binaryString.length);
+      const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
-        pcmBytes[i] = binaryString.charCodeAt(i);
+        bytes[i] = binaryString.charCodeAt(i);
       }
       
-      // Gemini TTS returns raw PCM (16-bit, mono, 24kHz). 
-      // We must add a WAV header for the browser Audio element to play it.
-      const wavBytes = addWavHeader(pcmBytes, 24000);
-      const blob = new Blob([wavBytes], { type: 'audio/wav' });
+      // The backend (api/tts.ts) already adds the WAV header.
+      // We just need to create the blob and play it.
+      const blob = new Blob([bytes], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
       
       const audio = new Audio(url);
@@ -374,7 +373,7 @@ export default function App() {
         if (audioRef.current === audio) {
           setIsTTSLoading(false);
           setIsPlayingAudio(false);
-          alert("音频解码或加载失败。请尝试重新生成。");
+          alert("音频播放失败，请尝试重新生成。");
         }
       };
 
@@ -800,7 +799,9 @@ export default function App() {
                             "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
                           )}
                         >
-                          {(isPlayingAudio || isTTSLoading || isPreGenerating) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                          {isPlayingAudio ? <Square className="w-4 h-4 fill-current" /> : 
+                           (isTTSLoading || isPreGenerating) ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                           <Users className="w-4 h-4" />}
                           {isPlayingAudio ? "停止朗读" : (isTTSLoading || isPreGenerating) ? "正在准备播音..." : "范文朗读 (AI)"}
                         </button>
                       </div>
