@@ -22,10 +22,7 @@ export const onRequest = async (context: any) => {
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ 
         parts: [{ 
-          text: `你是一位专业的中文播音员，声音温润儒雅，充满书卷气。请用标准普通话、优美的语调和恰当的情感起伏，朗读以下这篇优秀的语文范文。注意语速适中，吐字清晰，在句末和段落间留出自然的停顿，展现出文章的文学韵味和思想深度。
-
-范文内容如下：
-${cleanText}` 
+          text: cleanText 
         }] 
       }],
       config: {
@@ -46,7 +43,7 @@ ${cleanText}`
 
     // Gemini TTS returns raw PCM (16-bit, 24kHz, Mono). 
     // We need to wrap it in a WAV header for the browser to play it.
-    const pcmData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
+    const pcmData = new Uint8Array(atob(base64Audio).split("").map(c => c.charCodeAt(0)));
     const wavHeader = new Uint8Array(44);
     const view = new DataView(wavHeader.buffer);
     
@@ -74,14 +71,21 @@ ${cleanText}`
     combined.set(wavHeader);
     combined.set(pcmData, wavHeader.length);
 
-    // More robust base64 conversion for large files
-    let binary = '';
-    const bytes = new Uint8Array(combined);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const finalBase64 = btoa(binary);
+    // Efficient base64 conversion for large files in Cloudflare Workers
+    const base64Encode = (uint8Array: Uint8Array) => {
+      const CHUNK_SIZE = 0x8000; // 32k chunks
+      let index = 0;
+      const length = uint8Array.length;
+      let result = '';
+      while (index < length) {
+        const slice = uint8Array.subarray(index, Math.min(index + CHUNK_SIZE, length));
+        result += String.fromCharCode.apply(null, slice as any);
+        index += CHUNK_SIZE;
+      }
+      return btoa(result);
+    };
+
+    const finalBase64 = base64Encode(combined);
 
     return new Response(JSON.stringify({ audio: finalBase64 }), {
       headers: { "Content-Type": "application/json" },
