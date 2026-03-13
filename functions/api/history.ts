@@ -23,13 +23,21 @@ export const onRequest = async (context: any) => {
       ).bind(studentId).all();
       results = dbRes.results;
     } catch (dbErr: any) {
-      if (dbErr.message.includes("no column named essay_title")) {
+      // 尝试从新表查询（如果重命名失败了）
+      try {
         const dbRes = await env.DB.prepare(
-          "SELECT id, student_id as studentId, '无标题' as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
+          "SELECT id, student_id as studentId, essay_title as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses_new WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
         ).bind(studentId).all();
         results = dbRes.results;
-      } else {
-        throw dbErr;
+      } catch (e) {
+        if (dbErr.message.includes("no column named essay_title")) {
+          const dbRes = await env.DB.prepare(
+            "SELECT id, student_id as studentId, '无标题' as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
+          ).bind(studentId).all();
+          results = dbRes.results;
+        } else {
+          throw dbErr;
+        }
       }
     }
 
