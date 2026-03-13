@@ -17,19 +17,23 @@ export const onRequest = async (context: any) => {
     
     // Clean text for TTS (remove markdown symbols)
     const cleanText = text.replace(/[#*`>]/g, '').slice(0, 1000);
+    
+    // 优化提示词：要求模型以专业语文老师的身份，用标准、富有感情的普通话进行范读
+    const ttsPrompt = `请作为一名资深的语文老师，用标准、优美、富有感染力的普通话范读以下作文。语速适中，注意情感起伏、停顿和重音，使其听起来自然且富有启发性：\n\n${cleanText}`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: [{ 
         parts: [{ 
-          text: cleanText 
+          text: ttsPrompt 
         }] 
       }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, // Kore is generally good for standard Chinese
+            // 'Kore' 是目前 Gemini TTS 中中文表现较好的女声，配合上述提示词可达到更自然的效果
+            prebuiltVoiceConfig: { voiceName: 'Kore' }, 
           },
         },
       },
@@ -91,6 +95,13 @@ export const onRequest = async (context: any) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    console.error("TTS API Error:", err);
+    return new Response(JSON.stringify({ 
+      error: err.message,
+      details: "请检查 GEMINI_API_KEY 是否正确配置。如果问题持续，可能是模型服务暂时不可用。"
+    }), { 
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    });
   }
 };
