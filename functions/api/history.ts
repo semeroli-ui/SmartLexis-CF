@@ -16,9 +16,22 @@ export const onRequest = async (context: any) => {
 
   try {
     // 从 D1 查询最近 10 条记录
-    const { results } = await env.DB.prepare(
-      "SELECT id, student_id as studentId, essay_title as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
-    ).bind(studentId).all();
+    let results;
+    try {
+      const dbRes = await env.DB.prepare(
+        "SELECT id, student_id as studentId, essay_title as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
+      ).bind(studentId).all();
+      results = dbRes.results;
+    } catch (dbErr: any) {
+      if (dbErr.message.includes("no column named essay_title")) {
+        const dbRes = await env.DB.prepare(
+          "SELECT id, student_id as studentId, '无标题' as title, transcription, analysis_content as analysis, score, created_at as date FROM writing_analyses WHERE student_id = ? ORDER BY created_at DESC LIMIT 10"
+        ).bind(studentId).all();
+        results = dbRes.results;
+      } else {
+        throw dbErr;
+      }
+    }
 
     return new Response(JSON.stringify(results), {
       headers: { "Content-Type": "application/json" },
