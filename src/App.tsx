@@ -137,6 +137,9 @@ export default function App() {
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [preGeneratedAudio, setPreGeneratedAudio] = useState<string | null>(null);
+  const [isPreGenerating, setIsPreGenerating] = useState(false);
+  const [shouldPlayWhenReady, setShouldPlayWhenReady] = useState(false);
 
   // Essay Analysis States
   const [essayImages, setEssayImages] = useState<string[]>([]);
@@ -182,6 +185,83 @@ export default function App() {
     } catch (error) {
       console.error("Fetch history error:", error);
     }
+  };
+
+  // 监听范文变化，自动后台预生成语音
+  useEffect(() => {
+    if (upgradedEssay) {
+      preGenerateTTS(upgradedEssay);
+    } else {
+      setPreGeneratedAudio(null);
+      setIsPreGenerating(false);
+      setShouldPlayWhenReady(false);
+    }
+  }, [upgradedEssay]);
+
+  // 当预生成完成且用户已点击播放时，自动开始播放
+  useEffect(() => {
+    if (preGeneratedAudio && shouldPlayWhenReady) {
+      setShouldPlayWhenReady(false);
+      setIsTTSLoading(false);
+      playAudioFromBase64(preGeneratedAudio);
+    }
+  }, [preGeneratedAudio, shouldPlayWhenReady]);
+
+  const preGenerateTTS = async (text: string) => {
+    if (!text || isPreGenerating) return;
+    setPreGeneratedAudio(null);
+    setIsPreGenerating(true);
+    
+    try {
+      const limitedText = text.slice(0, 1000);
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: limitedText }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.audio) {
+          setPreGeneratedAudio(data.audio);
+        }
+      }
+    } catch (error) {
+      console.error("Pre-generation TTS error:", error);
+    } finally {
+      setIsPreGenerating(false);
+    }
+  };
+
+  const playAudioFromBase64 = (base64: string) => {
+    if (audioElement) {
+      audioElement.pause();
+      audioElement.src = "";
+    }
+
+    const audio = new Audio(`data:audio/wav;base64,${base64}`);
+    setAudioElement(audio);
+    
+    audio.oncanplaythrough = () => {
+      setIsTTSLoading(false);
+      setIsPlayingAudio(true);
+      audio.play().catch(e => {
+        console.error("Playback failed:", e);
+        setIsPlayingAudio(false);
+        alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
+      });
+    };
+
+    audio.onerror = (e) => {
+      console.error("Audio element error:", e);
+      setIsTTSLoading(false);
+      setIsPlayingAudio(false);
+      alert("音频加载失败，请检查网络或重试。");
+    };
+
+    audio.onended = () => {
+      setIsPlayingAudio(false);
+    };
   };
 
   // --- Action Handlers ---
@@ -236,6 +316,17 @@ export default function App() {
       return;
     }
 
+    if (preGeneratedAudio) {
+      playAudioFromBase64(preGeneratedAudio);
+      return;
+    }
+
+    if (isPreGenerating) {
+      setShouldPlayWhenReady(true);
+      setIsTTSLoading(true);
+      return;
+    }
+
     if (isTTSLoading) return;
 
     setIsTTSLoading(true);
@@ -278,37 +369,8 @@ export default function App() {
       }
 
       console.log("Audio data received, initializing player...");
-
-      if (audioElement) {
-        audioElement.pause();
-        audioElement.src = "";
-      }
-
-      const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
-      setAudioElement(audio);
-      
-      audio.oncanplaythrough = () => {
-        console.log("Audio ready to play");
-        setIsTTSLoading(false);
-        setIsPlayingAudio(true);
-        audio.play().catch(e => {
-          console.error("Playback failed:", e);
-          setIsPlayingAudio(false);
-          alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
-        });
-      };
-
-      audio.onerror = (e) => {
-        console.error("Audio element error:", e);
-        setIsTTSLoading(false);
-        setIsPlayingAudio(false);
-        alert("音频加载失败，请检查网络或重试。");
-      };
-
-      audio.onended = () => {
-        console.log("Audio playback ended");
-        setIsPlayingAudio(false);
-      };
+      setPreGeneratedAudio(data.audio);
+      playAudioFromBase64(data.audio);
 
     } catch (error: any) {
       clearTimeout(timeoutId);
@@ -599,7 +661,7 @@ export default function App() {
                           )}
                         >
                           {(isPlayingAudio || isTTSLoading) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-                          {isPlayingAudio ? "停止朗读" : isTTSLoading ? "正在生成语音..." : "范文朗读 (AI)"}
+                          {isPlayingAudio ? "停止朗读" : isTTSLoading ? (isPreGenerating ? "正在准备语音..." : "正在生成语音...") : "范文朗读 (AI)"}
                         </button>
                       </div>
                       <div className="prose prose-indigo max-w-none">
