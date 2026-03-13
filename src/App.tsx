@@ -224,12 +224,18 @@ export default function App() {
     setPreGeneratedAudio(null);
     setIsPreGenerating(true);
     
+    // 提取“升格范文”部分的内容，只朗读正文
+    let textToRead = text;
+    const essayMatch = text.match(/【升格范文】([\s\S]*?)(?=【|$)/);
+    if (essayMatch && essayMatch[1]) {
+      textToRead = essayMatch[1].trim();
+    }
+
     try {
-      const limitedText = text.slice(0, 800); // 进一步缩短长度以确保成功率
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: limitedText }),
+        body: JSON.stringify({ text: textToRead }),
       });
       
       if (response.ok) {
@@ -392,18 +398,23 @@ export default function App() {
     setIsTTSLoading(true);
     console.log("Starting TTS request...");
     
+    // 提取“升格范文”部分的内容，只朗读正文
+    let textToRead = text;
+    const essayMatch = text.match(/【升格范文】([\s\S]*?)(?=【|$)/);
+    if (essayMatch && essayMatch[1]) {
+      textToRead = essayMatch[1].trim();
+      console.log("Extracted essay content for reading");
+    }
+
     // 创建 AbortController 用于超时控制
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90000); // 延长至 90 秒超时
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 延长至 120 秒超时
 
     try {
-      // 限制发送文本长度，避免过长导致超时
-      const limitedText = text.slice(0, 1000);
-      
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: limitedText }),
+        body: JSON.stringify({ text: textToRead }),
         signal: controller.signal
       });
       
