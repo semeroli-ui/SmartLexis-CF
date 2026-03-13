@@ -244,34 +244,46 @@ export default function App() {
   };
 
   const playAudioFromBase64 = (base64: string) => {
+    console.log("Preparing to play audio, base64 length:", base64.length);
     if (audioElement) {
       audioElement.pause();
       audioElement.src = "";
     }
 
-    const audio = new Audio(`data:audio/wav;base64,${base64}`);
-    setAudioElement(audio);
-    
-    audio.oncanplaythrough = () => {
-      setIsTTSLoading(false);
-      setIsPlayingAudio(true);
-      audio.play().catch(e => {
-        console.error("Playback failed:", e);
+    try {
+      const audio = new Audio(`data:audio/wav;base64,${base64}`);
+      setAudioElement(audio);
+      
+      audio.oncanplaythrough = () => {
+        console.log("Audio can play through, starting playback...");
+        setIsTTSLoading(false);
+        setIsPlayingAudio(true);
+        audio.play().then(() => {
+          console.log("Playback started successfully");
+        }).catch(e => {
+          console.error("Playback failed:", e);
+          setIsPlayingAudio(false);
+          alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
+        });
+      };
+
+      audio.onerror = (e) => {
+        console.error("Audio element error event:", e);
+        setIsTTSLoading(false);
         setIsPlayingAudio(false);
-        alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
-      });
-    };
+        alert("音频加载失败，请检查网络或重试。");
+      };
 
-    audio.onerror = (e) => {
-      console.error("Audio element error:", e);
+      audio.onended = () => {
+        console.log("Audio playback ended naturally");
+        setIsPlayingAudio(false);
+      };
+    } catch (err) {
+      console.error("Error creating Audio object:", err);
       setIsTTSLoading(false);
       setIsPlayingAudio(false);
-      alert("音频加载失败，请检查网络或重试。");
-    };
-
-    audio.onended = () => {
-      setIsPlayingAudio(false);
-    };
+      alert("创建音频播放器失败。");
+    }
   };
 
   // --- Action Handlers ---
