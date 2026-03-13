@@ -140,6 +140,8 @@ export default function App() {
   const [preGeneratedAudio, setPreGeneratedAudio] = useState<string | null>(null);
   const [isPreGenerating, setIsPreGenerating] = useState(false);
   const [shouldPlayWhenReady, setShouldPlayWhenReady] = useState(false);
+  const ttsAbortControllerRef = useRef<AbortController | null>(null);
+  const preGenerateAbortControllerRef = useRef<AbortController | null>(null);
 
   // Essay Analysis States
   const [essayImages, setEssayImages] = useState<string[]>([]);
@@ -219,6 +221,19 @@ export default function App() {
     };
   }, []);
 
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      if (audioRef.current.src.startsWith('blob:')) {
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    setIsPlayingAudio(false);
+    setIsTTSLoading(false);
+  };
+
   const preGenerateTTS = async (text: string) => {
     if (!text || isPreGenerating) return;
     setPreGeneratedAudio(null);
@@ -232,11 +247,17 @@ export default function App() {
       textToRead = essayMatch[1].trim();
     }
 
+    if (preGenerateAbortControllerRef.current) {
+      preGenerateAbortControllerRef.current.abort();
+    }
+    preGenerateAbortControllerRef.current = new AbortController();
+
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToRead }),
+        signal: preGenerateAbortControllerRef.current.signal
       });
       
       if (response.ok) {
@@ -251,6 +272,7 @@ export default function App() {
         throw new Error(errData.error || `HTTP ${response.status}`);
       }
     } catch (error: any) {
+      if (error.name === 'AbortError') return;
       console.error("Pre-generation TTS error:", error);
       if (shouldPlayWhenReady) {
         setIsTTSLoading(false);
@@ -259,6 +281,7 @@ export default function App() {
       }
     } finally {
       setIsPreGenerating(false);
+      preGenerateAbortControllerRef.current = null;
     }
   };
 
@@ -267,14 +290,7 @@ export default function App() {
     setIsTTSLoading(true);
     
     // Clean up previous audio resources synchronously
-    if (audioRef.current) {
-      audioRef.current.pause();
-      if (audioRef.current.src.startsWith('blob:')) {
-        URL.revokeObjectURL(audioRef.current.src);
-      }
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
+    stopAudio();
 
     try {
       const binaryString = window.atob(base64);
@@ -303,11 +319,14 @@ export default function App() {
           console.error("Playback failed:", e);
           setIsPlayingAudio(false);
           setIsTTSLoading(false);
-          alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
+          // 只有在非主动停止的情况下才报错
+          if (audioRef.current === audio) {
+            alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
+          }
         });
       };
 
-      audio.oncanplay = startPlayback;
+      audio.oncanplaythrough = startPlayback;
 
       audio.onerror = (e) => {
         console.error("Audio element error event:", e);
@@ -322,17 +341,9 @@ export default function App() {
         console.log("Audio playback ended naturally");
         if (audioRef.current === audio) {
           setIsPlayingAudio(false);
-          URL.revokeObjectURL(url);
+          // Keep the current audioRef but mark as not playing
         }
       };
-
-      // Fallback timeout for loading state
-      setTimeout(() => {
-        if (audioRef.current === audio && isTTSLoading && !isPlayingAudio) {
-          console.log("Audio loading timeout, attempting forced play...");
-          startPlayback();
-        }
-      }, 5000);
 
     } catch (err) {
       console.error("Error creating Audio object:", err);
@@ -385,16 +396,21 @@ export default function App() {
   };
 
   const playTTS = async (text: string) => {
-    if (isPlayingAudio) {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        if (audioRef.current.src.startsWith('blob:')) {
-          URL.revokeObjectURL(audioRef.current.src);
+    if (isPlayingAudio || isTTSLoading || isPreGenerating) {
+      if (isPlayingAudio) {
+        stopAudio();
+      } else if (isPreGenerating) {
+        setShouldPlayWhenReady(false);
+        if (preGenerateAbortControllerRef.current) {
+          preGenerateAbortControllerRef.current.abort();
         }
-        audioRef.current = null;
+        setIsTTSLoading(false);
+      } else if (isTTSLoading) {
+        if (ttsAbortControllerRef.current) {
+          ttsAbortControllerRef.current.abort();
+        }
+        setIsTTSLoading(false);
       }
-      setIsPlayingAudio(false);
-      setIsTTSLoading(false);
       return;
     }
 
@@ -402,14 +418,6 @@ export default function App() {
       playAudioFromBase64(preGeneratedAudio);
       return;
     }
-
-    if (isPreGenerating) {
-      setShouldPlayWhenReady(true);
-      setIsTTSLoading(true);
-      return;
-    }
-
-    if (isTTSLoading) return;
 
     setIsTTSLoading(true);
     console.log("Starting TTS request...");
@@ -423,19 +431,19 @@ export default function App() {
       console.log("Extracted essay content for reading:", textToRead.slice(0, 20) + "...");
     }
 
-    // 创建 AbortController 用于超时控制
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 120000); // 延长至 120 秒超时
+    if (ttsAbortControllerRef.current) {
+      ttsAbortControllerRef.current.abort();
+    }
+    ttsAbortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToRead }),
-        signal: controller.signal
+        signal: ttsAbortControllerRef.current.signal
       });
       
-      clearTimeout(timeoutId);
       console.log("TTS response received, status:", response.status);
 
       if (!response.ok) {
@@ -461,19 +469,13 @@ export default function App() {
       setPreGeneratedAudio(data.audio);
       playAudioFromBase64(data.audio);
 
-      } catch (error: any) {
-      clearTimeout(timeoutId);
+    } catch (error: any) {
+      if (error.name === 'AbortError') return;
       console.error("TTS error:", error);
       setIsTTSLoading(false);
-      setIsPlayingAudio(false);
-      
-      if (error.name === 'AbortError') {
-        alert("朗读请求超时，请检查您的网络连接或稍后重试。");
-      } else if (error.message.includes("API Key missing")) {
-        alert("朗读失败：未配置 GEMINI_API_KEY。\n\n请在 Cloudflare 控制台的 Settings -> Variables 中添加 GEMINI_API_KEY 环境变量。");
-      } else {
-        alert(`朗读失败: ${error.message}\n\n提示：请确保已在 Cloudflare 后端配置了 GEMINI_API_KEY，且网络通畅。`);
-      }
+      alert(`语音生成失败: ${error.message}`);
+    } finally {
+      ttsAbortControllerRef.current = null;
     }
   };
 
@@ -751,16 +753,14 @@ export default function App() {
                       <div className="flex justify-end gap-3 no-print">
                         <button 
                           onClick={() => playTTS(upgradedEssay)}
-                          disabled={isTTSLoading && !isPlayingAudio && !isPreGenerating}
                           className={cn(
                             "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            isPlayingAudio ? "bg-rose-500 text-white" : 
-                            (isTTSLoading && !isPlayingAudio) ? "bg-slate-400 text-white cursor-not-allowed" :
+                            (isPlayingAudio || isTTSLoading || isPreGenerating) ? "bg-rose-500 text-white" : 
                             "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
                           )}
                         >
-                          {(isPlayingAudio || isTTSLoading) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
-                          {isPlayingAudio ? "停止朗读" : isTTSLoading ? (isPreGenerating ? "正在准备语音..." : "正在生成语音...") : "范文朗读 (AI)"}
+                          {(isPlayingAudio || isTTSLoading || isPreGenerating) ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                          {isPlayingAudio ? "停止朗读" : (isTTSLoading || isPreGenerating) ? "正在生成/准备 (点击取消)" : "范文朗读 (AI)"}
                         </button>
                       </div>
                       <div className="prose prose-indigo max-w-none">
