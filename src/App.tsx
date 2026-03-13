@@ -151,10 +151,13 @@ export default function App() {
     if (savedUser) {
       const userData = JSON.parse(savedUser);
       setUser(userData);
-      setView(userData.role === 'teacher' ? 'teacher' : 'student');
+      // 强制根据角色设置初始视图
       if (userData.role === 'student') {
+        setView('student');
         setSelectedStudentId(userData.uid);
         fetchAnalysisHistory(userData.uid);
+      } else {
+        setView('teacher');
       }
     }
     setAuthLoading(false);
@@ -465,9 +468,25 @@ export default function App() {
     reader.readAsText(file);
   };
 
-  const selectedStudent = useMemo(() => 
-    students.find(s => s.id === selectedStudentId) || students[0]
-  , [selectedStudentId, students]);
+  const selectedStudent = useMemo(() => {
+    const found = students.find(s => s.id === selectedStudentId);
+    if (found) return found;
+    // 如果是学生登录且没在预设名单中，返回一个空数据的学生对象，避免看到别人的数据
+    if (user?.role === 'student' && user.uid === selectedStudentId) {
+      return {
+        id: user.uid,
+        name: user.name,
+        choice: 0,
+        dictation: 0,
+        nonLinear: 0,
+        modernReading: 0,
+        classicReading: 0,
+        composition: 0,
+        total: 0
+      };
+    }
+    return students[0];
+  }, [selectedStudentId, students, user]);
 
   const classStats = useMemo(() => {
     const total = students.reduce((acc, s) => acc + s.total, 0);
@@ -509,7 +528,11 @@ export default function App() {
       setUser(userData);
       localStorage.setItem('lexis_user', JSON.stringify(userData));
       if (userData.role === 'student') {
+        setView('student');
+        setSelectedStudentId(userData.uid);
         fetchAnalysisHistory(userData.uid);
+      } else {
+        setView('teacher');
       }
     }} />;
   }
@@ -656,15 +679,17 @@ export default function App() {
         </div>
 
         <nav className="space-y-2 flex-1">
-          <button 
-            onClick={() => setView('teacher')}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
-              view === 'teacher' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            )}
-          >
-            <Users className="w-4 h-4" /> 班级概览
-          </button>
+          {user?.role === 'teacher' && (
+            <button 
+              onClick={() => setView('teacher')}
+              className={cn(
+                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+                view === 'teacher' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              )}
+            >
+              <Users className="w-4 h-4" /> 班级概览
+            </button>
+          )}
           <button 
             onClick={() => setView('student')}
             className={cn(
@@ -672,30 +697,35 @@ export default function App() {
               view === 'student' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             )}
           >
-            <UserCircle className="w-4 h-4" /> 个人诊断
+            <UserCircle className="w-4 h-4" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
           </button>
-          <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">数据管理</div>
-          <label className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
-            <Upload className="w-4 h-4" /> 成绩导入
-            <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-          </label>
-          <button 
-            onClick={() => {
-              const csv = "学号,姓名,选择题,现代文阅读,文言文阅读,非连续性文本,默写填空,作文\n2026001,学生A,25,24,15,8,9,42";
-              const blob = new Blob([csv], { type: 'text/csv' });
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.setAttribute('hidden', '');
-              a.setAttribute('href', url);
-              a.setAttribute('download', '成绩导入模板.csv');
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-            }}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
-          >
-            <Download className="w-4 h-4" /> 下载模板
-          </button>
+          
+          {user?.role === 'teacher' && (
+            <>
+              <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">数据管理</div>
+              <label className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
+                <Upload className="w-4 h-4" /> 成绩导入
+                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+              </label>
+              <button 
+                onClick={() => {
+                  const csv = "学号,姓名,选择题,现代文阅读,文言文阅读,非连续性文本,默写填空,作文\n2026001,学生A,25,24,15,8,9,42";
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.setAttribute('hidden', '');
+                  a.setAttribute('href', url);
+                  a.setAttribute('download', '成绩导入模板.csv');
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+              >
+                <Download className="w-4 h-4" /> 下载模板
+              </button>
+            </>
+          )}
         </nav>
 
         <div className="mt-auto p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
@@ -719,7 +749,7 @@ export default function App() {
       {/* Main Content */}
       <main className="lg:ml-64 p-6 md:p-10 max-w-7xl mx-auto">
         
-        {view === 'teacher' ? (
+        {view === 'teacher' && user?.role === 'teacher' ? (
           <div className="space-y-8 animate-in fade-in duration-500">
             <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
               <div>
@@ -849,15 +879,17 @@ export default function App() {
           <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
             <header className="flex items-center justify-between">
               <div className="flex items-center gap-4">
-                <button 
-                  onClick={() => setView('teacher')}
-                  className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                >
-                  <ArrowRight className="w-5 h-5 rotate-180" />
-                </button>
+                {user?.role === 'teacher' && (
+                  <button 
+                    onClick={() => setView('teacher')}
+                    className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                  >
+                    <ArrowRight className="w-5 h-5 rotate-180" />
+                  </button>
+                )}
                 <div>
                   <h1 className="text-2xl font-bold flex items-center gap-2">
-                    {selectedStudent.name} 的诊断报告
+                    {user?.role === 'student' ? '我的诊断报告' : `${selectedStudent.name} 的诊断报告`}
                     <span className="text-xs font-normal bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
                       学号: {selectedStudent.id}
                     </span>
