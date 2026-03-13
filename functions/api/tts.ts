@@ -47,7 +47,12 @@ export const onRequest = async (context: any) => {
 
     // Gemini TTS returns raw PCM (16-bit, 24kHz, Mono). 
     // We need to wrap it in a WAV header for the browser to play it.
-    const pcmData = new Uint8Array(atob(base64Audio).split("").map(c => c.charCodeAt(0)));
+    const binaryString = atob(base64Audio);
+    const pcmData = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      pcmData[i] = binaryString.charCodeAt(i);
+    }
+
     const wavHeader = new Uint8Array(44);
     const view = new DataView(wavHeader.buffer);
     
@@ -75,16 +80,14 @@ export const onRequest = async (context: any) => {
     combined.set(wavHeader);
     combined.set(pcmData, wavHeader.length);
 
-    // Efficient base64 conversion for large files in Cloudflare Workers
+    // Efficient base64 conversion for Cloudflare Workers
     const base64Encode = (uint8Array: Uint8Array) => {
-      const CHUNK_SIZE = 0x8000; // 32k chunks
-      let index = 0;
-      const length = uint8Array.length;
       let result = '';
-      while (index < length) {
-        const slice = uint8Array.subarray(index, Math.min(index + CHUNK_SIZE, length));
-        result += String.fromCharCode.apply(null, slice as any);
-        index += CHUNK_SIZE;
+      const len = uint8Array.length;
+      const step = 1024; // Process in smaller steps to avoid stack issues
+      for (let i = 0; i < len; i += step) {
+        const end = Math.min(i + step, len);
+        result += String.fromCharCode.apply(null, uint8Array.subarray(i, end) as any);
       }
       return btoa(result);
     };
