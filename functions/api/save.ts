@@ -14,42 +14,26 @@ export const onRequest = async (context: any) => {
     const data = await request.json();
     const { studentId, title, transcription, analysis, score } = data;
 
-    // 尝试插入数据，如果失败则尝试修复表结构
+    // 使用全新的表名 writing_records 以避免旧表的约束冲突
     try {
+      await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS writing_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          student_id TEXT NOT NULL,
+          essay_title TEXT NOT NULL,
+          transcription TEXT,
+          analysis_content TEXT NOT NULL,
+          score INTEGER,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+
       await env.DB.prepare(
-        "INSERT INTO writing_analyses (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO writing_records (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
       ).bind(studentId, title, transcription, analysis, score).run();
     } catch (dbErr: any) {
       console.error("D1 Insert Error:", dbErr.message);
-      
-      // 如果是外键错误或列缺失，尝试重建表（仅作为最后的补救措施）
-      if (dbErr.message.includes("FOREIGN KEY") || dbErr.message.includes("no column named")) {
-        await env.DB.prepare(`
-          CREATE TABLE IF NOT EXISTS writing_analyses_new (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            student_id TEXT NOT NULL,
-            essay_title TEXT NOT NULL,
-            transcription TEXT,
-            analysis_content TEXT NOT NULL,
-            score INTEGER,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-          )
-        `).run();
-        
-        await env.DB.prepare(
-          "INSERT INTO writing_analyses_new (student_id, essay_title, transcription, analysis_content, score) VALUES (?, ?, ?, ?, ?)"
-        ).bind(studentId, title, transcription, analysis, score).run();
-        
-        // 尝试重命名（如果原表没用了）
-        try {
-           await env.DB.prepare("DROP TABLE writing_analyses").run();
-           await env.DB.prepare("ALTER TABLE writing_analyses_new RENAME TO writing_analyses").run();
-        } catch (e) {
-           // 如果重命名失败，至少数据存到了新表
-        }
-      } else {
-        throw dbErr;
-      }
+      throw dbErr;
     }
 
     return new Response(JSON.stringify({ success: true }), {
