@@ -226,7 +226,8 @@ export default function App() {
     
     // 提取“升格范文”部分的内容，只朗读正文
     let textToRead = text;
-    const essayMatch = text.match(/【升格范文】([\s\S]*?)(?=【|$)/);
+    // 兼容多种可能的范文标题格式
+    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|$)/i);
     if (essayMatch && essayMatch[1]) {
       textToRead = essayMatch[1].trim();
     }
@@ -261,7 +262,7 @@ export default function App() {
     }
   };
 
-  const playAudioFromBase64 = (base64: string) => {
+  const playAudioFromBase64 = async (base64: string) => {
     console.log("Preparing to play audio, base64 length:", base64.length);
     setIsTTSLoading(true);
     
@@ -276,12 +277,8 @@ export default function App() {
     }
 
     try {
-      const binaryString = window.atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'audio/wav' });
+      // 使用 fetch 转换 base64 为 blob，这在处理大数据时比 atob 更高效且稳定
+      const blob = await fetch(`data:audio/wav;base64,${base64}`).then(r => r.blob());
       const url = URL.createObjectURL(blob);
       
       const audio = new Audio(url);
@@ -400,10 +397,11 @@ export default function App() {
     
     // 提取“升格范文”部分的内容，只朗读正文
     let textToRead = text;
-    const essayMatch = text.match(/【升格范文】([\s\S]*?)(?=【|$)/);
+    // 兼容多种可能的范文标题格式
+    const essayMatch = text.match(/(?:【?升格(?:版)?范文】?|1\.\s*升格版范文)([\s\S]*?)(?=【|2\.|\n\n亮点解析|$)/i);
     if (essayMatch && essayMatch[1]) {
       textToRead = essayMatch[1].trim();
-      console.log("Extracted essay content for reading");
+      console.log("Extracted essay content for reading:", textToRead.slice(0, 20) + "...");
     }
 
     // 创建 AbortController 用于超时控制
