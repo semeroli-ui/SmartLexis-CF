@@ -136,7 +136,7 @@ export default function App() {
   const [upgradedEssay, setUpgradedEssay] = useState<string | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [preGeneratedAudio, setPreGeneratedAudio] = useState<string | null>(null);
   const [isPreGenerating, setIsPreGenerating] = useState(false);
   const [shouldPlayWhenReady, setShouldPlayWhenReady] = useState(false);
@@ -207,6 +207,18 @@ export default function App() {
     }
   }, [preGeneratedAudio, shouldPlayWhenReady]);
 
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        if (audioRef.current.src.startsWith('blob:')) {
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+      }
+    };
+  }, []);
+
   const preGenerateTTS = async (text: string) => {
     if (!text || isPreGenerating) return;
     setPreGeneratedAudio(null);
@@ -245,44 +257,70 @@ export default function App() {
 
   const playAudioFromBase64 = (base64: string) => {
     console.log("Preparing to play audio, base64 length:", base64.length);
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.src = "";
+    setIsTTSLoading(true);
+    
+    // Clean up previous audio resources synchronously
+    if (audioRef.current) {
+      audioRef.current.pause();
+      if (audioRef.current.src.startsWith('blob:')) {
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      audioRef.current.src = "";
+      audioRef.current = null;
     }
 
     try {
-      const audio = new Audio(`data:audio/wav;base64,${base64}`);
-      setAudioElement(audio);
+      const binaryString = window.atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      
+      const audio = new Audio(url);
+      audioRef.current = audio;
       
       audio.oncanplaythrough = () => {
-        console.log("Audio can play through, starting playback...");
+        // Double check if this is still the current audio we want to play
+        if (audioRef.current !== audio) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        
+        console.log("Audio blob ready, starting playback...");
         setIsTTSLoading(false);
         setIsPlayingAudio(true);
         audio.play().then(() => {
-          console.log("Playback started successfully");
+          console.log("Playback started successfully (Blob URL)");
         }).catch(e => {
           console.error("Playback failed:", e);
           setIsPlayingAudio(false);
-          alert("播放失败：浏览器可能阻止了自动播放，请点击页面后重试。");
+          alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
         });
       };
 
       audio.onerror = (e) => {
         console.error("Audio element error event:", e);
-        setIsTTSLoading(false);
-        setIsPlayingAudio(false);
-        alert("音频加载失败，请检查网络或重试。");
+        if (audioRef.current === audio) {
+          setIsTTSLoading(false);
+          setIsPlayingAudio(false);
+          alert("音频加载失败，请检查网络或重试。");
+        }
       };
 
       audio.onended = () => {
         console.log("Audio playback ended naturally");
-        setIsPlayingAudio(false);
+        if (audioRef.current === audio) {
+          setIsPlayingAudio(false);
+          URL.revokeObjectURL(url);
+        }
       };
     } catch (err) {
-      console.error("Error creating Audio object:", err);
+      console.error("Error creating Audio object from blob:", err);
       setIsTTSLoading(false);
       setIsPlayingAudio(false);
-      alert("创建音频播放器失败。");
+      alert("处理音频数据失败。");
     }
   };
 
@@ -330,9 +368,9 @@ export default function App() {
 
   const playTTS = async (text: string) => {
     if (isPlayingAudio) {
-      if (audioElement) {
-        audioElement.pause();
-        audioElement.currentTime = 0;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
       }
       setIsPlayingAudio(false);
       return;
