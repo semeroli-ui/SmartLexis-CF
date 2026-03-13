@@ -13,6 +13,14 @@ export const onRequest = async (context: any) => {
 
   try {
     const { text } = await request.json();
+    
+    if (!text || text.trim().length < 2) {
+      return new Response(JSON.stringify({ error: "朗读内容太短或为空，请确保范文已生成。" }), { 
+        status: 400,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     const ai = new GoogleGenAI({ apiKey });
     
     // Clean text for TTS (remove markdown symbols)
