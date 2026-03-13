@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart,
@@ -681,7 +681,15 @@ export default function App() {
                 <p className="text-slate-500 text-sm mt-1">基于 AI 诊断结果生成的个性化提升方案</p>
               </div>
               <button 
-                onClick={() => { setActiveAction(null); setPracticeContent(null); setUpgradedEssay(null); audioElement?.pause(); }}
+                onClick={() => { 
+                  setActiveAction(null); 
+                  setPracticeContent(null); 
+                  setUpgradedEssay(null); 
+                  if (audioRef.current) {
+                    audioRef.current.pause();
+                    setIsPlayingAudio(false);
+                  }
+                }}
                 className="p-2 hover:bg-slate-200 rounded-full transition-colors"
               >
                 <AlertCircle className="w-6 h-6 text-slate-400" />
@@ -778,7 +786,15 @@ export default function App() {
             
             <div className="p-6 border-t border-slate-100 text-center no-print">
               <button 
-                onClick={() => { setActiveAction(null); setPracticeContent(null); setUpgradedEssay(null); audioElement?.pause(); }}
+                onClick={() => { 
+                  setActiveAction(null); 
+                  setPracticeContent(null); 
+                  setUpgradedEssay(null); 
+                  if (audioRef.current) {
+                    audioRef.current.pause();
+                    setIsPlayingAudio(false);
+                  }
+                }}
                 className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all"
               >
                 完成学习
