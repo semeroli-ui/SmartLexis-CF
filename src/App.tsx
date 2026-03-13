@@ -262,7 +262,7 @@ export default function App() {
     }
   };
 
-  const playAudioFromBase64 = async (base64: string) => {
+  const playAudioFromBase64 = (base64: string) => {
     console.log("Preparing to play audio, base64 length:", base64.length);
     setIsTTSLoading(true);
     
@@ -277,31 +277,37 @@ export default function App() {
     }
 
     try {
-      // 使用 fetch 转换 base64 为 blob，这在处理大数据时比 atob 更高效且稳定
-      const blob = await fetch(`data:audio/wav;base64,${base64}`).then(r => r.blob());
+      const binaryString = window.atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/wav' });
       const url = URL.createObjectURL(blob);
       
       const audio = new Audio(url);
       audioRef.current = audio;
       
-      audio.oncanplaythrough = () => {
-        // Double check if this is still the current audio we want to play
+      const startPlayback = () => {
         if (audioRef.current !== audio) {
           URL.revokeObjectURL(url);
           return;
         }
         
-        console.log("Audio blob ready, starting playback...");
+        console.log("Audio ready, starting playback...");
         setIsTTSLoading(false);
         setIsPlayingAudio(true);
         audio.play().then(() => {
-          console.log("Playback started successfully (Blob URL)");
+          console.log("Playback started successfully");
         }).catch(e => {
           console.error("Playback failed:", e);
           setIsPlayingAudio(false);
+          setIsTTSLoading(false);
           alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
         });
       };
+
+      audio.oncanplay = startPlayback;
 
       audio.onerror = (e) => {
         console.error("Audio element error event:", e);
@@ -319,8 +325,17 @@ export default function App() {
           URL.revokeObjectURL(url);
         }
       };
+
+      // Fallback timeout for loading state
+      setTimeout(() => {
+        if (audioRef.current === audio && isTTSLoading && !isPlayingAudio) {
+          console.log("Audio loading timeout, attempting forced play...");
+          startPlayback();
+        }
+      }, 5000);
+
     } catch (err) {
-      console.error("Error creating Audio object from blob:", err);
+      console.error("Error creating Audio object:", err);
       setIsTTSLoading(false);
       setIsPlayingAudio(false);
       alert("处理音频数据失败。");
@@ -373,9 +388,13 @@ export default function App() {
     if (isPlayingAudio) {
       if (audioRef.current) {
         audioRef.current.pause();
-        audioRef.current.currentTime = 0;
+        if (audioRef.current.src.startsWith('blob:')) {
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+        audioRef.current = null;
       }
       setIsPlayingAudio(false);
+      setIsTTSLoading(false);
       return;
     }
 
@@ -732,11 +751,11 @@ export default function App() {
                       <div className="flex justify-end gap-3 no-print">
                         <button 
                           onClick={() => playTTS(upgradedEssay)}
-                          disabled={isTTSLoading}
+                          disabled={isTTSLoading && !isPlayingAudio && !isPreGenerating}
                           className={cn(
                             "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
                             isPlayingAudio ? "bg-rose-500 text-white" : 
-                            isTTSLoading ? "bg-slate-400 text-white cursor-not-allowed" :
+                            (isTTSLoading && !isPlayingAudio) ? "bg-slate-400 text-white cursor-not-allowed" :
                             "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
                           )}
                         >
