@@ -22,31 +22,25 @@ export const onRequest = async (context: any) => {
     const ttsPrompt = `请作为一名资深的语文老师，用标准、优美、富有感染力的普通话范读以下作文。语速适中，注意情感起伏、停顿和重音，使其听起来自然且富有启发性：\n\n${cleanText}`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
+      model: "gemini-2.5-flash",
       contents: [{ 
         parts: [{ 
-          text: ttsPrompt 
+          text: `你是一位极具感染力的语文老师。请用标准、优美、富有情感的普通话朗读以下范文。要求：语速自然，抑扬顿挫，在抒情处婉转，在议论处有力，让学生感受到文字的魅力：\n\n${cleanText}` 
         }] 
       }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            // 'Kore' 是目前 Gemini TTS 中中文表现较好的女声，配合上述提示词可达到更自然的效果
-            prebuiltVoiceConfig: { voiceName: 'Kore' }, 
-          },
-        },
       },
     });
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    const base64Audio = part?.inlineData?.data;
 
     if (!base64Audio) {
-      return new Response(JSON.stringify({ error: "No audio data received from AI" }), { status: 500 });
+      return new Response(JSON.stringify({ error: "AI 未能生成音频数据，请稍后重试。" }), { status: 500 });
     }
 
-    // Gemini TTS returns raw PCM (16-bit, 24kHz, Mono). 
-    // We need to wrap it in a WAV header for the browser to play it.
+    // Gemini returns raw PCM (16-bit, 24kHz, Mono) for Modality.AUDIO
     const binaryString = atob(base64Audio);
     const pcmData = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
