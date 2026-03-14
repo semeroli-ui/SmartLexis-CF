@@ -19,6 +19,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import Auth from './components/Auth';
+import AdminDashboard from './components/AdminDashboard';
 import ReactMarkdown from 'react-markdown';
 
 // Utility for tailwind classes
@@ -44,7 +45,7 @@ interface AppUser {
   uid: string;
   email: string;
   name: string;
-  role: 'teacher' | 'student';
+  role: 'teacher' | 'student' | 'admin';
 }
 
 interface WritingAnalysis {
@@ -122,7 +123,7 @@ const StatBox = ({ label, value, subValue, icon: Icon, colorClass }: any) => (
 export default function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [view, setView] = useState<'teacher' | 'student'>('teacher');
+  const [view, setView] = useState<'teacher' | 'student' | 'admin'>('teacher');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [students, setStudents] = useState<StudentScore[]>(ALL_STUDENTS);
@@ -199,6 +200,8 @@ export default function App() {
         setView('student');
         setSelectedStudentId(userData.uid);
         fetchAnalysisHistory(userData.uid);
+      } else if (userData.role === 'admin') {
+        setView('admin');
       } else {
         setView('teacher');
       }
@@ -764,10 +767,16 @@ export default function App() {
         setView('student');
         setSelectedStudentId(userData.uid);
         fetchAnalysisHistory(userData.uid);
+      } else if (userData.role === 'admin') {
+        setView('admin');
       } else {
         setView('teacher');
       }
     }} />;
+  }
+
+  if (view === 'admin') {
+    return <AdminDashboard onLogout={handleLogout} />;
   }
 
   return (
