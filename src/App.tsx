@@ -309,7 +309,7 @@ export default function App() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead.slice(0, 600) }),
+        body: JSON.stringify({ text: textToRead.slice(0, 1000) }),
         signal: preGenerateAbortControllerRef.current.signal
       });
       
@@ -498,7 +498,7 @@ export default function App() {
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead.slice(0, 600) }),
+        body: JSON.stringify({ text: textToRead.slice(0, 1000) }),
         signal: ttsAbortControllerRef.current.signal
       });
       
