@@ -30,7 +30,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
           onAuthSuccess(users[email]);
         } else if (email === 'admin@lexis.com' && password === 'admin123') {
           // 预设一个管理员账号
-          const adminUser = { uid: 'admin', email, name: '系统管理员', role: 'teacher' };
+          const adminUser = { uid: 'admin', email, name: '系统管理员', role: 'admin' };
           onAuthSuccess(adminUser);
         } else {
           setError('邮箱或密码错误，或用户不存在。');
