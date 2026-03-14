@@ -314,15 +314,9 @@ export default function App() {
       });
       
       if (response.ok) {
-        const blob = await response.blob();
-        if (blob.size > 100) {
-          // Convert blob to base64 to store in state
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const base64data = (reader.result as string).split(',')[1];
-            setPreGeneratedAudio(base64data);
-          };
-          reader.readAsDataURL(blob);
+        const data = await response.json();
+        if (data.audio && data.audio.length > 100) {
+          setPreGeneratedAudio(data.audio);
         }
       }
     } catch (error: any) {
@@ -525,10 +519,16 @@ export default function App() {
       }
 
       console.log("TTS response received, status:", response.status);
-      const blob = await response.blob();
+      const data = await response.json();
       
-      if (blob.size > 100) {
-        console.log("Audio data received, size:", blob.size, "initializing player...");
+      if (data.audio && data.audio.length > 100) {
+        console.log("Audio data received, length:", data.audio.length, "initializing player...");
+        const binaryString = window.atob(data.audio);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: 'audio/wav' });
         playAudioFromBlob(blob);
       } else {
         throw new Error("接收到的音频数据无效或太短");
