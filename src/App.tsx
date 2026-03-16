@@ -126,7 +126,35 @@ export default function App() {
   const [view, setView] = useState<'teacher' | 'student' | 'admin'>('teacher');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [students, setStudents] = useState<StudentScore[]>(ALL_STUDENTS);
+  const [students, setStudents] = useState<StudentScore[]>(() => {
+    const saved = localStorage.getItem('lexis_students');
+    return saved ? JSON.parse(saved) : ALL_STUDENTS;
+  });
+  const [editingStudent, setEditingStudent] = useState<StudentScore | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('lexis_students', JSON.stringify(students));
+  }, [students]);
+
+  const handleDeleteStudent = (id: string) => {
+    if (window.confirm('确定要删除该学生信息吗？')) {
+      setStudents(prev => prev.filter(s => s.id !== id));
+    }
+  };
+
+  const handleSaveStudent = (updatedStudent: StudentScore) => {
+    setStudents(prev => {
+      const exists = prev.find(s => s.id === updatedStudent.id);
+      if (exists) {
+        return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
+      } else {
+        return [...prev, updatedStudent].sort((a, b) => b.total - a.total);
+      }
+    });
+    setIsEditModalOpen(false);
+    setEditingStudent(null);
+  };
   const [aiPrescription, setAiPrescription] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -919,6 +947,85 @@ export default function App() {
         </div>
       )}
 
+      {/* Edit Student Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <UserCircle className="w-5 h-5 text-indigo-600" />
+                {editingStudent ? '编辑学生信息' : '新增学生信息'}
+              </h3>
+              <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <AlertCircle className="w-5 h-5 text-slate-400 rotate-45" />
+              </button>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const choice = parseInt(formData.get('choice') as string);
+              const modern = parseInt(formData.get('modernReading') as string);
+              const classic = parseInt(formData.get('classicReading') as string);
+              const nonLinear = parseInt(formData.get('nonLinear') as string);
+              const dictation = parseInt(formData.get('dictation') as string);
+              const composition = parseInt(formData.get('composition') as string);
+              
+              handleSaveStudent({
+                id: formData.get('id') as string,
+                name: formData.get('name') as string,
+                choice,
+                modernReading: modern,
+                classicReading: classic,
+                nonLinear,
+                dictation,
+                composition,
+                total: choice + modern + classic + nonLinear + dictation + composition
+              });
+            }} className="p-8 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">学号 / Student ID</label>
+                  <input name="id" defaultValue={editingStudent?.id} required disabled={!!editingStudent} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">姓名 / Name</label>
+                  <input name="name" defaultValue={editingStudent?.name} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { name: 'choice', label: '选择题', max: 30 },
+                  { name: 'modernReading', label: '现代文', max: 30 },
+                  { name: 'classicReading', label: '文言文', max: 20 },
+                  { name: 'nonLinear', label: '非连续', max: 10 },
+                  { name: 'dictation', label: '默写', max: 10 },
+                  { name: 'composition', label: '作文', max: 50 },
+                ].map(field => (
+                  <div key={field.name} className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{field.label} (max {field.max})</label>
+                    <input 
+                      type="number" 
+                      name={field.name} 
+                      defaultValue={editingStudent ? (editingStudent as any)[field.name] : 0} 
+                      min="0" 
+                      max={field.max} 
+                      required 
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-4 flex gap-3">
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all">取消</button>
+                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all">保存信息</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Global Print Styles */}
       <style>{`
         @media print {
@@ -983,6 +1090,16 @@ export default function App() {
               >
                 <Download className="w-4 h-4" /> 下载模板
               </button>
+              <button 
+                onClick={() => {
+                  if (window.confirm('确定要清空所有学生数据吗？此操作不可撤销。')) {
+                    setStudents([]);
+                  }
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-rose-900/20 hover:text-rose-400 transition-all"
+              >
+                <AlertCircle className="w-4 h-4" /> 清空数据
+              </button>
             </>
           )}
         </nav>
@@ -1016,6 +1133,13 @@ export default function App() {
                 <p className="text-slate-500 mt-1">高二(3)班 · 2026年春季第一次月考分析</p>
               </div>
               <div className="flex gap-2">
+                <button 
+                  onClick={() => { setEditingStudent(null); setIsEditModalOpen(true); }}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all"
+                >
+                  <Users className="w-4 h-4" />
+                  新增学生
+                </button>
                 <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 cursor-pointer transition-all shadow-sm">
                   <Upload className="w-4 h-4" />
                   导入
@@ -1103,11 +1227,11 @@ export default function App() {
                       <th className="pb-4 font-semibold text-center text-slate-600">文言文</th>
                       <th className="pb-4 font-semibold text-center text-slate-600">作文</th>
                       <th className="pb-4 font-semibold text-right">总分</th>
-                      <th className="pb-4"></th>
+                      <th className="pb-4 text-center">操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {filteredStudents.slice(0, 10).map((s, idx) => (
+                    {filteredStudents.slice(0, 20).map((s, idx) => (
                       <tr key={s.id} className="group hover:bg-slate-50/80 transition-colors">
                         <td className="py-4 text-sm font-medium text-slate-400">#{(idx + 1).toString().padStart(2, '0')}</td>
                         <td className="py-4">
@@ -1119,13 +1243,30 @@ export default function App() {
                         <td className="py-4 text-center text-sm">{s.classicReading}</td>
                         <td className="py-4 text-center text-sm font-medium text-indigo-600">{s.composition}</td>
                         <td className="py-4 text-right font-black text-slate-900">{s.total}</td>
-                        <td className="py-4 text-right">
-                          <button 
-                            onClick={() => { setSelectedStudentId(s.id); setView('student'); }}
-                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </button>
+                        <td className="py-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <button 
+                              onClick={() => { setSelectedStudentId(s.id); setView('student'); }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                              title="查看报告"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => { setEditingStudent(s); setIsEditModalOpen(true); }}
+                              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
+                              title="编辑信息"
+                            >
+                              <PenTool className="w-4 h-4" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteStudent(s.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                              title="删除学生"
+                            >
+                              <AlertCircle className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
