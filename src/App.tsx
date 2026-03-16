@@ -1,1609 +1,688 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Area, AreaChart,
-  BarChart, Bar, Cell, ComposedChart
-} from 'recharts';
-import { 
-  BookOpen, TrendingUp, Target, Award, ChevronRight, BrainCircuit, 
-  PenTool, Library, AlertCircle, CheckCircle2, ArrowRight, Users, 
-  FileSpreadsheet, Search, Filter, Download, UserCircle, Sparkles,
-  ArrowUpRight, ArrowDownRight, Upload, Loader2, LogOut, Image as ImageIcon,
-  FileText, History, Square
+  Users, UserCircle, BookOpen, PenTool, Sparkles, 
+  TrendingUp, Award, AlertCircle, CheckCircle2, 
+  Search, Filter, Download, Upload, LogOut, 
+  ChevronRight, BrainCircuit, Target, FileText,
+  Loader2, ImageIcon, History, Square, ArrowRight,
+  BarChart3, Activity
 } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
+  ResponsiveContainer, Cell, RadarChart, PolarGrid, 
+  PolarAngleAxis, PolarRadiusAxis, Radar, Legend
+} from 'recharts';
+import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import { cn } from './lib/utils';
 import Auth from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
-import ReactMarkdown from 'react-markdown';
-
-// Utility for tailwind classes
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 // --- Types ---
-
-interface StudentScore {
+interface Student {
   id: string;
   name: string;
-  choice: number;        // 选择题 (max 30) -> 语言建构
-  modernReading: number; // 现代文 (max 30) -> 审美鉴赏
-  classicReading: number;// 文言文 (max 20) -> 文化传承
-  nonLinear: number;     // 非连续性文本 (max 10) -> 思维发展
-  dictation: number;     // 默写 (max 10) -> 语言建构
-  composition: number;   // 作文 (max 50) -> 表达创作
+  choice: number;
+  modernReading: number;
+  classicReading: number;
+  nonLinear: number;
+  dictation: number;
+  composition: number;
   total: number;
 }
 
-interface AppUser {
-  uid: string;
-  email: string;
-  name: string;
-  role: 'teacher' | 'student' | 'admin';
-}
-
-interface WritingAnalysis {
+interface WritingRecord {
   id: string;
   studentId: string;
   title: string;
-  transcription: string;
   analysis: string;
   date: string;
 }
 
-// --- Mock Data Generator ---
+interface User {
+  uid: string;
+  email: string;
+  name: string;
+  role: 'student' | 'teacher' | 'admin';
+  studentId?: string;
+}
 
-const generateMockData = (count: number): StudentScore[] => {
-  const names = ["张伟", "王芳", "李娜", "刘洋", "陈静", "杨光", "赵敏", "周强", "徐磊", "孙燕"];
-  return Array.from({ length: count }, (_, i) => {
-    const choice = Math.floor(Math.random() * 10) + 20;
-    const modern = Math.floor(Math.random() * 10) + 18;
-    const classic = Math.floor(Math.random() * 8) + 12;
-    const nonLinear = Math.floor(Math.random() * 4) + 6;
-    const dictation = Math.floor(Math.random() * 4) + 6;
-    const composition = Math.floor(Math.random() * 15) + 30;
-    return {
-      id: `2026${(i + 1).toString().padStart(3, '0')}`,
-      name: names[i % names.length] + (Math.floor(i / 10) || ''),
-      choice,
-      modernReading: modern,
-      classicReading: classic,
-      nonLinear,
-      dictation,
-      composition,
-      total: choice + modern + classic + nonLinear + dictation + composition
-    };
-  }).sort((a, b) => b.total - a.total);
-};
-
-const ALL_STUDENTS = generateMockData(60);
-
-// --- Components ---
-
-const Card = ({ children, className, title, icon: Icon, subtitle }: any) => (
-  <div className={cn("bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden", className)}>
+// --- UI Components ---
+const Card = ({ title, subtitle, children, className, delay = 0 }: any) => (
+  <motion.div 
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    transition={{ duration: 0.5, delay }}
+    className={cn("bg-white rounded-[32px] p-8 shadow-sm border border-slate-100 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-500", className)}
+  >
     {(title || subtitle) && (
-      <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-        <div>
-          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-            {Icon && <Icon className="w-4 h-4 text-indigo-600" />}
-            {title}
-          </h3>
-          {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
-        </div>
+      <div className="mb-8">
+        {title && <h3 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h3>}
+        {subtitle && <p className="text-xs text-slate-400 font-bold mt-1.5 uppercase tracking-widest">{subtitle}</p>}
       </div>
     )}
-    <div className="p-6">{children}</div>
-  </div>
+    {children}
+  </motion.div>
 );
 
-const StatBox = ({ label, value, subValue, icon: Icon, colorClass }: any) => (
-  <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-    <div className="flex justify-between items-start mb-2">
-      <span className="text-sm font-medium text-slate-500">{label}</span>
-      <div className={cn("p-2 rounded-lg", colorClass)}>
-        <Icon className="w-4 h-4" />
+const StatBox = ({ label, value, subValue, icon: Icon, colorClass, delay = 0 }: any) => (
+  <motion.div 
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ duration: 0.4, delay }}
+    className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex items-center gap-5 group hover:border-indigo-100 transition-all duration-300"
+  >
+    <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 duration-500", colorClass)}>
+      <Icon className="w-7 h-7" />
+    </div>
+    <div>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-black text-slate-900">{value}</span>
+        {subValue && <span className="text-xs font-bold text-emerald-500">{subValue}</span>}
       </div>
     </div>
-    <div className="flex items-baseline gap-2">
-      <span className="text-2xl font-bold text-slate-900">{value}</span>
-      {subValue && <span className="text-xs font-medium text-emerald-600">{subValue}</span>}
-    </div>
-  </div>
+  </motion.div>
 );
 
-// --- Main App ---
-
 export default function App() {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
   const [view, setView] = useState<'teacher' | 'student' | 'admin'>('teacher');
+  const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [students, setStudents] = useState<StudentScore[]>(() => {
-    const saved = localStorage.getItem('lexis_students');
-    return saved ? JSON.parse(saved) : ALL_STUDENTS;
-  });
-  const [editingStudent, setEditingStudent] = useState<StudentScore | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
-  useEffect(() => {
-    localStorage.setItem('lexis_students', JSON.stringify(students));
-  }, [students]);
-
-  const handleDeleteStudent = (id: string) => {
-    if (window.confirm('确定要删除该学生信息吗？')) {
-      setStudents(prev => prev.filter(s => s.id !== id));
-    }
-  };
-
-  const handleSaveStudent = (updatedStudent: StudentScore) => {
-    setStudents(prev => {
-      const exists = prev.find(s => s.id === updatedStudent.id);
-      if (exists) {
-        return prev.map(s => s.id === updatedStudent.id ? updatedStudent : s);
-      } else {
-        return [...prev, updatedStudent].sort((a, b) => b.total - a.total);
-      }
-    });
-    setIsEditModalOpen(false);
-    setEditingStudent(null);
-  };
-  const [aiPrescription, setAiPrescription] = useState<string | null>(null);
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-
-  // Action States
+  const [aiPrescription, setAiPrescription] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<'practice' | 'essay' | 'graph' | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [practiceContent, setPracticeContent] = useState<string | null>(null);
-  const [upgradedEssay, setUpgradedEssay] = useState<string | null>(null);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [isTTSLoading, setIsTTSLoading] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [preGeneratedAudio, setPreGeneratedAudio] = useState<string | null>(null);
-  const [isPreGenerating, setIsPreGenerating] = useState(false);
-  const [shouldPlayWhenReady, setShouldPlayWhenReady] = useState(false);
-  const ttsAbortControllerRef = useRef<AbortController | null>(null);
-  const preGenerateAbortControllerRef = useRef<AbortController | null>(null);
-
-  // Utility to add WAV header to raw PCM data
-  const addWavHeader = (pcmData: Uint8Array, sampleRate: number) => {
-    const header = new ArrayBuffer(44);
-    const view = new DataView(header);
-
-    // RIFF identifier
-    view.setUint32(0, 0x52494646, false); // "RIFF"
-    // file length
-    view.setUint32(4, 36 + pcmData.length, true);
-    // RIFF type
-    view.setUint32(8, 0x57415645, false); // "WAVE"
-    // format chunk identifier
-    view.setUint32(12, 0x666d7420, false); // "fmt "
-    // format chunk length
-    view.setUint32(16, 16, true);
-    // sample format (1 = raw PCM)
-    view.setUint16(20, 1, true);
-    // channel count (1 = mono)
-    view.setUint16(22, 1, true);
-    // sample rate
-    view.setUint32(24, sampleRate, true);
-    // byte rate (sample rate * block align)
-    view.setUint32(28, sampleRate * 2, true);
-    // block align (channel count * bytes per sample)
-    view.setUint16(32, 2, true);
-    // bits per sample
-    view.setUint16(34, 16, true);
-    // data chunk identifier
-    view.setUint32(36, 0x64617461, false); // "data"
-    // data chunk length
-    view.setUint32(40, pcmData.length, true);
-
-    const wavData = new Uint8Array(header.byteLength + pcmData.length);
-    wavData.set(new Uint8Array(header), 0);
-    wavData.set(pcmData, 44);
-    return wavData;
-  };
-
-  // Essay Analysis States
-  const [essayImages, setEssayImages] = useState<string[]>([]);
   const [essayTitle, setEssayTitle] = useState('');
+  const [essayImages, setEssayImages] = useState<string[]>([]);
   const [isAnalyzingEssay, setIsAnalyzingEssay] = useState(false);
-  const [essayAnalysis, setEssayAnalysis] = useState<WritingAnalysis | null>(null);
-  const [analysisHistory, setAnalysisHistory] = useState<WritingAnalysis[]>([]);
+  const [essayAnalysis, setEssayAnalysis] = useState<WritingRecord | null>(null);
+  const [analysisHistory, setAnalysisHistory] = useState<WritingRecord[]>([]);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // 极简模拟：从本地存储获取用户信息，或默认一个 ID
     const savedUser = localStorage.getItem('lexis_user');
     if (savedUser) {
       const userData = JSON.parse(savedUser);
       setUser(userData);
-      // 强制根据角色设置初始视图
       if (userData.role === 'student') {
         setView('student');
         setSelectedStudentId(userData.studentId || userData.uid);
-        fetchAnalysisHistory(userData.uid);
+        fetchAnalysisHistory(userData.studentId || userData.uid);
       } else if (userData.role === 'admin') {
         setView('admin');
-      } else {
-        setView('teacher');
       }
     }
     setAuthLoading(false);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('lexis_user');
-    setUser(null);
-    setSelectedStudentId(null);
-    setAiPrescription(null);
-    setEssayAnalysis(null);
-    setAnalysisHistory([]);
-  };
-
-  const fetchAnalysisHistory = async (uid: string) => {
-    try {
-      const response = await fetch(`/api/history?studentId=${uid}`);
-      if (response.ok) {
-        const data = await response.json();
-        setAnalysisHistory(data);
-      }
-    } catch (error) {
-      console.error("Fetch history error:", error);
-    }
-  };
-
-  // 监听范文变化，自动后台预生成语音
   useEffect(() => {
-    if (upgradedEssay) {
-      preGenerateTTS(upgradedEssay);
-    } else {
-      setPreGeneratedAudio(null);
-      setIsPreGenerating(false);
-      setShouldPlayWhenReady(false);
-    }
-  }, [upgradedEssay]);
-
-  // 当预生成完成且用户已点击播放时，自动开始播放
-  useEffect(() => {
-    if (preGeneratedAudio && shouldPlayWhenReady) {
-      setShouldPlayWhenReady(false);
-      setIsTTSLoading(false);
-      const binaryString = window.atob(preGeneratedAudio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'audio/wav' });
-      playAudioFromBlob(blob);
-    }
-  }, [preGeneratedAudio, shouldPlayWhenReady]);
-
-  // Cleanup audio on unmount
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        if (audioRef.current.src.startsWith('blob:')) {
-          URL.revokeObjectURL(audioRef.current.src);
-        }
-      }
-    };
-  }, []);
-
-  const stopAudio = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      if (audioRef.current.src.startsWith('blob:')) {
-        URL.revokeObjectURL(audioRef.current.src);
-      }
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    setIsPlayingAudio(false);
-    setIsTTSLoading(false);
-  };
-
-  const preGenerateTTS = async (text: string) => {
-    if (!text || isPreGenerating) return;
-    setPreGeneratedAudio(null);
-    setIsPreGenerating(true);
-    
-    // 提取“升格范文”部分的内容，只朗读正文
-    let textToRead = text;
-    const essayRegex = /(?:^|\n)(?:#\s*)?(?:【?\s*升格(?:版)?范文\s*】?|(?:\d\.|[一二三])\s*升格(?:版)?范文)(?:\s*\n|[:：\s])([\s\S]*?)(?=\n\n(?:【|(?:\d\.|[一二三])\.)|\n\n亮点解析|\n\n升格解析|$)/i;
-    
-    const essayMatch = text.match(essayRegex);
-    if (essayMatch && essayMatch[1] && essayMatch[1].trim().length > 10) {
-      textToRead = essayMatch[1].trim();
-    } else {
-      const looseMatch = text.match(/(?:【?升格(?:版)?范文】?|升格版范文)([\s\S]*?)(?=【|亮点解析|升格解析|$)/i);
-      if (looseMatch && looseMatch[1] && looseMatch[1].trim().length > 20) {
-        textToRead = looseMatch[1].trim();
-      }
-    }
-
-    if (preGenerateAbortControllerRef.current) {
-      preGenerateAbortControllerRef.current.abort();
-    }
-    preGenerateAbortControllerRef.current = new AbortController();
-
-    try {
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead.slice(0, 1000) }),
-        signal: preGenerateAbortControllerRef.current.signal
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.audio && data.audio.length > 100) {
-          setPreGeneratedAudio(data.audio);
-        }
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') return;
-      console.error("Pre-generation TTS error:", error);
-    } finally {
-      setIsPreGenerating(false);
-      preGenerateAbortControllerRef.current = null;
-    }
-  };
-
-  const playAudioFromBlob = (blob: Blob) => {
-    console.log("Preparing to play audio from blob, size:", blob.size);
-    setIsTTSLoading(true);
-    
-    // Clean up previous audio resources synchronously
-    stopAudio();
-
-    try {
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      
-      const startPlayback = () => {
-        if (audioRef.current !== audio) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        
-        console.log("Audio ready, starting playback...");
-        setIsTTSLoading(false);
-        setIsPlayingAudio(true);
-        audio.play().then(() => {
-          console.log("Playback started successfully");
-        }).catch(e => {
-          console.error("Playback failed:", e);
-          setIsPlayingAudio(false);
-          setIsTTSLoading(false);
-          if (audioRef.current === audio) {
-            alert("播放失败：浏览器可能阻止了自动播放，请点击页面任意位置后再试。");
+    if (user?.role === 'teacher') {
+      fetch('/api/students')
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            const studentsWithScores = data.map(s => ({
+              id: s.studentId || s.uid,
+              name: s.name,
+              choice: Math.floor(Math.random() * 5) + 25,
+              modernReading: Math.floor(Math.random() * 5) + 20,
+              classicReading: Math.floor(Math.random() * 5) + 12,
+              nonLinear: Math.floor(Math.random() * 3) + 7,
+              dictation: Math.floor(Math.random() * 2) + 8,
+              composition: Math.floor(Math.random() * 10) + 35,
+              total: 0
+            })).map(s => ({
+              ...s,
+              total: s.choice + s.modernReading + s.classicReading + s.nonLinear + s.dictation + s.composition
+            }));
+            setStudents(studentsWithScores);
           }
         });
-      };
-
-      audio.oncanplaythrough = startPlayback;
-
-      audio.onerror = (e) => {
-        console.error("Audio element error event:", e);
-        if (audioRef.current === audio) {
-          setIsTTSLoading(false);
-          setIsPlayingAudio(false);
-          alert("音频播放失败，请尝试重新生成。");
-        }
-      };
-
-      audio.onended = () => {
-        console.log("Audio playback ended naturally");
-        if (audioRef.current === audio) {
-          setIsPlayingAudio(false);
-        }
-      };
-
-    } catch (err) {
-      console.error("Error creating Audio object from blob:", err);
-      setIsTTSLoading(false);
-      setIsPlayingAudio(false);
-      alert("处理音频数据失败。");
     }
-  };
+  }, [user]);
 
-  // --- Action Handlers ---
-  const fetchPractice = async () => {
-    if (!selectedStudent) return;
-    setIsActionLoading(true);
-    setActiveAction('practice');
+  const fetchAnalysisHistory = async (studentId: string) => {
     try {
-      const response = await fetch('/api/generate_practice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ studentScore: selectedStudent })
-      });
-      const data = await response.json();
-      setPracticeContent(data.text);
-    } catch (error) {
-      console.error("Practice generation error:", error);
-    } finally {
-      setIsActionLoading(false);
-    }
+      const res = await fetch(`/api/history?studentId=${studentId}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setAnalysisHistory(data);
+    } catch (err) { console.error(err); }
   };
 
-  const fetchUpgradedEssay = async () => {
-    if (!essayAnalysis) {
-      alert("请先完成作文诊断");
-      return;
-    }
-    setIsActionLoading(true);
-    setActiveAction('essay');
-    try {
-      const response = await fetch('/api/upgrade_essay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ essayText: essayAnalysis.analysis, title: essayAnalysis.title })
-      });
-      const data = await response.json();
-      setUpgradedEssay(data.text);
-    } catch (error) {
-      console.error("Essay upgrade error:", error);
-    } finally {
-      setIsActionLoading(false);
-    }
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('lexis_user');
+    setView('teacher');
   };
 
-  const playTTS = async (text: string) => {
-    if (isPlayingAudio || isTTSLoading || isPreGenerating) {
-      if (isPlayingAudio) {
-        stopAudio();
-      } else if (isPreGenerating) {
-        setShouldPlayWhenReady(false);
-        if (preGenerateAbortControllerRef.current) {
-          preGenerateAbortControllerRef.current.abort();
-        }
-        setIsTTSLoading(false);
-      } else if (isTTSLoading) {
-        if (ttsAbortControllerRef.current) {
-          ttsAbortControllerRef.current.abort();
-        }
-        setIsTTSLoading(false);
-      }
-      return;
-    }
-
-    if (preGeneratedAudio) {
-      // Convert base64 back to blob if needed, or just keep it as blob in state
-      // For now, assume we'll just re-fetch or handle pre-generation separately
-      // Let's simplify: if we have it, play it.
-      const binaryString = window.atob(preGeneratedAudio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'audio/wav' });
-      playAudioFromBlob(blob);
-      return;
-    }
-
-    setIsTTSLoading(true);
-    console.log("Starting TTS request...");
-    
-    // 提取“升格范文”部分的内容，只朗读正文
-    let textToRead = text;
-    
-    // 更加严谨的正则：匹配独立成行的标题，避免匹配到句子中间的“升格范文”
-    // 1. 匹配 【升格范文】 这种带括号的标题
-    // 2. 匹配 1. 升格版范文 这种带序号的标题
-    // 3. 匹配 升格范文 这种单独占一行的标题
-    const essayRegex = /(?:^|\n)(?:#\s*)?(?:【?\s*升格(?:版)?范文\s*】?|(?:\d\.|[一二三])\s*升格(?:版)?范文)(?:\s*\n|[:：\s])([\s\S]*?)(?=\n\n(?:【|(?:\d\.|[一二三])\.)|\n\n亮点解析|\n\n升格解析|$)/i;
-    
-    const essayMatch = text.match(essayRegex);
-    if (essayMatch && essayMatch[1] && essayMatch[1].trim().length > 10) {
-      textToRead = essayMatch[1].trim();
-      console.log("Extracted essay content for reading (Strict Match):", textToRead.slice(0, 30) + "...");
-    } else {
-      // 如果严谨匹配失败，尝试宽松匹配，但排除掉常见的引导语
-      const looseMatch = text.match(/(?:【?升格(?:版)?范文】?|升格版范文)([\s\S]*?)(?=【|亮点解析|升格解析|$)/i);
-      if (looseMatch && looseMatch[1] && looseMatch[1].trim().length > 20) {
-        textToRead = looseMatch[1].trim();
-        console.log("Extracted essay content for reading (Loose Match):", textToRead.slice(0, 30) + "...");
-      } else {
-        console.warn("Could not extract essay content accurately, falling back to full text.");
-      }
-    }
-
-    if (ttsAbortControllerRef.current) {
-      ttsAbortControllerRef.current.abort();
-    }
-    ttsAbortControllerRef.current = new AbortController();
-
-    try {
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead.slice(0, 1000) }),
-        signal: ttsAbortControllerRef.current.signal
-      });
-      
-      console.log("TTS response received, status:", response.status);
-
-      if (!response.ok) {
-        let errorMessage = `服务器响应异常 (${response.status})`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          // 处理非 JSON 错误（如 502/504 超时）
-          if (response.status === 502 || response.status === 504) {
-            errorMessage = "服务器响应超时。由于范文较长，AI 生成语音需要较长时间，请稍后再试或尝试缩短范文。";
-          }
-        }
-        throw new Error(errorMessage);
-      }
-
-      console.log("TTS response received, status:", response.status);
-      const data = await response.json();
-      
-      if (data.audio && data.audio.length > 100) {
-        console.log("Audio data received, length:", data.audio.length, "initializing player...");
-        const binaryString = window.atob(data.audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: 'audio/wav' });
-        playAudioFromBlob(blob);
-      } else {
-        throw new Error("接收到的音频数据无效或太短");
-      }
-
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log("TTS request aborted by user");
-        return;
-      }
-      console.error("TTS error:", error);
-      setIsTTSLoading(false);
-      
-      // 尝试解析后端返回的 JSON 错误信息
-      let errorMsg = error.message;
-      try {
-        if (error.message.includes('{')) {
-          const parsed = JSON.parse(error.message.substring(error.message.indexOf('{')));
-          errorMsg = parsed.error || parsed.message || errorMsg;
-        }
-      } catch (e) {}
-      
-      alert(`语音生成失败: ${errorMsg}`);
-    } finally {
-      ttsAbortControllerRef.current = null;
-    }
+  const handleSaveStudent = (student: Student) => {
+    setStudents(prev => editingStudent ? prev.map(s => s.id === student.id ? student : s) : [...prev, student]);
+    setIsEditModalOpen(false);
+    setEditingStudent(null);
   };
 
-  const exportToPDF = () => {
-    window.print();
-  };
-
-  // --- AI Analysis ---
-  const generateAIAnalysis = async (student: StudentScore) => {
+  const generateAIAnalysis = async (student: Student) => {
     setIsGenerating(true);
-    setAiPrescription(null);
     try {
-      // 调用 Cloudflare 后端 API 进行学情分析
-      const response = await fetch('/api/analyze_student', {
+      const res = await fetch('/api/analyze_student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student })
       });
-      
-      if (!response.ok) throw new Error('AI 分析失败');
-      const data = await response.json();
-      setAiPrescription(data.text || "生成失败，请稍后再试。");
-    } catch (error) {
-      console.error("AI Error:", error);
-      setAiPrescription("AI 诊断暂时不可用，请检查网络或 API 配置。");
-    } finally {
-      setIsGenerating(false);
-    }
+      const data = await res.json();
+      setAiPrescription(data.analysis);
+    } catch (err) { console.error(err); }
+    finally { setIsGenerating(false); }
   };
 
   const analyzeEssay = async () => {
-    if (essayImages.length < 2) {
-      alert("请至少上传 2 张作文图片（最多 5 张）");
-      return;
-    }
-    if (!essayTitle.trim()) {
-      alert("请输入作文题目");
-      return;
-    }
+    if (!essayTitle.trim() || essayImages.length === 0) return;
     setIsAnalyzingEssay(true);
     try {
-      // 调用 Cloudflare 后端 API 进行作文诊断 (OCR + 分析)
-      const response = await fetch('/api/analyze_essay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ images: essayImages, title: essayTitle })
-      });
-
-      if (!response.ok) throw new Error('作文分析失败');
-      const data = await response.json();
-
-      const result: WritingAnalysis = {
-        id: Date.now().toString(),
-        studentId: user!.uid,
-        title: essayTitle,
-        transcription: "已包含在诊断报告中",
-        analysis: data.text || "分析失败",
-        date: new Date().toISOString()
-      };
-
-      // 调用 Cloudflare 后端 API 保存到 D1
-      const saveResponse = await fetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: result.studentId,
-          title: result.title,
-          transcription: result.transcription,
-          analysis: result.analysis,
-          score: 45 
-        })
-      });
-
-      if (!saveResponse.ok) {
-        const saveError = await saveResponse.json().catch(() => ({ error: "保存到历史记录失败" }));
-        console.warn("Save analysis warning:", saveError.error);
-      }
-
-      setEssayAnalysis(result);
-      fetchAnalysisHistory(user!.uid);
-      setEssayImages([]);
-      setEssayTitle('');
-    } catch (error) {
-      console.error("Essay Analysis Error:", error);
-      alert("分析失败，请稍后再试。");
-    } finally {
-      setIsAnalyzingEssay(false);
-    }
+      const formData = new FormData();
+      formData.append('title', essayTitle);
+      formData.append('studentId', selectedStudentId || '');
+      essayImages.forEach(img => formData.append('images', img));
+      const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
+      const data = await res.json();
+      setEssayAnalysis(data);
+      setAnalysisHistory(prev => [data, ...prev]);
+    } catch (err) { console.error(err); }
+    finally { setIsAnalyzingEssay(false); }
   };
 
-  const handleEssayImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length + essayImages.length > 5) {
-      alert("最多上传 5 张图片");
+  const playTTS = async (text: string) => {
+    if (isPlayingAudio) {
+      window.speechSynthesis.cancel();
+      setIsPlayingAudio(false);
       return;
     }
-
-    files.forEach(file => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setEssayImages(prev => [...prev, reader.result as string]);
-      };
-      reader.readAsDataURL(file);
-    });
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.onstart = () => setIsPlayingAudio(true);
+    utterance.onend = () => setIsPlayingAudio(false);
+    window.speechSynthesis.speak(utterance);
   };
 
-  // --- Data Import ---
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      const lines = text.split('\n');
-      const newStudents: StudentScore[] = [];
-
-      // Skip header
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        if (cols.length >= 8) {
-          const choice = parseInt(cols[2]);
-          const modernReading = parseInt(cols[3]);
-          const classicReading = parseInt(cols[4]);
-          const nonLinear = parseInt(cols[5]);
-          const dictation = parseInt(cols[6]);
-          const composition = parseInt(cols[7]);
-          const total = choice + modernReading + classicReading + nonLinear + dictation + composition;
-          
-          newStudents.push({
-            id: cols[0],
-            name: cols[1],
-            choice,
-            modernReading,
-            classicReading,
-            nonLinear,
-            dictation,
-            composition,
-            total
-          });
-        }
-      }
-      if (newStudents.length > 0) {
-        setStudents(newStudents);
-        alert(`成功导入 ${newStudents.length} 名学生数据`);
-      }
+    reader.onload = (event) => {
+      const rows = (event.target?.result as string).split('\n').slice(1);
+      const newStudents = rows.map(row => {
+        const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.split(',');
+        if (!id || !name) return null;
+        const s = { id, name, choice: parseInt(choice) || 0, modernReading: parseInt(modern) || 0, classicReading: parseInt(classic) || 0, nonLinear: parseInt(nonLinear) || 0, dictation: parseInt(dictation) || 0, composition: parseInt(composition) || 0, total: 0 };
+        s.total = s.choice + s.modernReading + s.classicReading + s.nonLinear + s.dictation + s.composition;
+        return s;
+      }).filter(Boolean) as Student[];
+      setStudents(prev => [...prev, ...newStudents]);
     };
     reader.readAsText(file);
   };
 
-  const selectedStudent = useMemo(() => {
-    const found = students.find(s => s.id === selectedStudentId);
-    if (found) return found;
-    // 如果是学生登录且没在预设名单中，返回一个空数据的学生对象，避免看到别人的数据
-    if (user?.role === 'student' && user.uid === selectedStudentId) {
-      return {
-        id: user.uid,
-        name: user.name,
-        choice: 0,
-        dictation: 0,
-        nonLinear: 0,
-        modernReading: 0,
-        classicReading: 0,
-        composition: 0,
-        total: 0
-      };
-    }
-    return students[0];
-  }, [selectedStudentId, students, user]);
+  const handleEssayImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    Array.from(e.target.files || []).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => setEssayImages(prev => [...prev, event.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
+  };
 
-  const classStats = useMemo(() => {
-    const total = students.reduce((acc, s) => acc + s.total, 0);
-    const avg = (total / students.length).toFixed(1);
-    const passCount = students.filter(s => s.total >= 90).length;
-    const excellentCount = students.filter(s => s.total >= 120).length;
-    
-    return { 
-      avg, 
-      passRate: ((passCount/students.length)*100).toFixed(1), 
-      excellentRate: ((excellentCount/students.length)*100).toFixed(1) 
-    };
-  }, [students]);
+  const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0] || {
+    id: 'N/A', name: '未选择', choice: 0, modernReading: 0, classicReading: 0, nonLinear: 0, dictation: 0, composition: 0, total: 0
+  };
 
-  // Map scores to literacy dimensions
-  const getLiteracyData = (student: StudentScore) => [
-    { subject: '语言建构', value: Math.round(((student.choice + student.dictation) / 40) * 100) },
-    { subject: '思维发展', value: Math.round((student.nonLinear / 10) * 100) },
-    { subject: '审美鉴赏', value: Math.round((student.modernReading / 30) * 100) },
-    { subject: '文化传承', value: Math.round((student.classicReading / 20) * 100) },
-    { subject: '表达创作', value: Math.round((student.composition / 50) * 100) },
+  const classStats = {
+    avg: students.length ? Math.round(students.reduce((acc, s) => acc + s.total, 0) / students.length) : 0,
+    passRate: students.length ? Math.round((students.filter(s => s.total >= 90).length / students.length) * 100) : 0,
+    excellentRate: students.length ? Math.round((students.filter(s => s.total >= 120).length / students.length) * 100) : 0
+  };
+
+  const getLiteracyData = (s: Student) => [
+    { subject: '语言建构', value: Math.round(((s.choice + s.dictation) / 40) * 100) },
+    { subject: '思维发展', value: Math.round(((s.modernReading + s.nonLinear) / 40) * 100) },
+    { subject: '审美鉴赏', value: Math.round((s.composition / 50) * 100) },
+    { subject: '文化传承', value: Math.round((s.classicReading / 20) * 100) },
+    { subject: '表达创作', value: Math.round(((s.composition + s.modernReading) / 80) * 100) },
   ];
 
-  const filteredStudents = students.filter(s => 
-    s.name.includes(searchTerm) || s.id.includes(searchTerm)
+  const filteredStudents = students.filter(s => s.name.includes(searchTerm) || s.id.includes(searchTerm));
+
+  if (authLoading) return (
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
+      <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+      <p className="text-slate-500 font-medium animate-pulse">正在加载智语系统...</p>
+    </div>
   );
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-        <p className="text-slate-500 font-medium animate-pulse">正在加载智语系统...</p>
-      </div>
-    );
-  }
+  if (!user) return <Auth onAuthSuccess={(userData) => {
+    setUser(userData);
+    localStorage.setItem('lexis_user', JSON.stringify(userData));
+    if (userData.role === 'student') {
+      setView('student');
+      setSelectedStudentId(userData.studentId || userData.uid);
+      fetchAnalysisHistory(userData.studentId || userData.uid);
+    } else if (userData.role === 'admin') setView('admin');
+    else setView('teacher');
+  }} />;
 
-  if (!user) {
-    return <Auth onAuthSuccess={(userData) => {
-      setUser(userData);
-      localStorage.setItem('lexis_user', JSON.stringify(userData));
-      if (userData.role === 'student') {
-        setView('student');
-        setSelectedStudentId(userData.studentId || userData.uid);
-        fetchAnalysisHistory(userData.uid);
-      } else if (userData.role === 'admin') {
-        setView('admin');
-      } else {
-        setView('teacher');
-      }
-    }} />;
-  }
-
-  if (view === 'admin') {
-    return <AdminDashboard onLogout={handleLogout} />;
-  }
+  if (view === 'admin') return <AdminDashboard onLogout={handleLogout} />;
 
   return (
-    <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans">
-      {/* Modals for Actions */}
-      {activeAction && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-[32px] w-full max-w-4xl shadow-2xl animate-in zoom-in-95 duration-300 flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-[32px]">
-              <div>
-                <h3 className="text-2xl font-serif font-bold text-slate-900 flex items-center gap-3">
-                  {activeAction === 'practice' && <><Target className="text-indigo-600" /> 专项提分练习</>}
-                  {activeAction === 'essay' && <><Award className="text-emerald-600" /> 范文升格赏析</>}
-                  {activeAction === 'graph' && <><BrainCircuit className="text-indigo-600" /> 核心素养图谱</>}
-                </h3>
-                <p className="text-slate-500 text-sm mt-1">基于 AI 诊断结果生成的个性化提升方案</p>
-              </div>
-              <button 
-                onClick={() => { 
-                  setActiveAction(null); 
-                  setPracticeContent(null); 
-                  setUpgradedEssay(null); 
-                  if (audioRef.current) {
-                    audioRef.current.pause();
-                    setIsPlayingAudio(false);
-                  }
-                }}
-                className="p-2 hover:bg-slate-200 rounded-full transition-colors"
-              >
-                <AlertCircle className="w-6 h-6 text-slate-400" />
-              </button>
-            </div>
-
-            <div className="p-8 overflow-y-auto flex-1 print:p-0">
-              {isActionLoading ? (
-                <div className="py-20 flex flex-col items-center justify-center gap-4">
-                  <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-                  <p className="text-slate-500 font-medium animate-pulse">AI 正在为您精心准备内容...</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {activeAction === 'practice' && practiceContent && (
-                    <div className="prose prose-indigo max-w-none print:prose-sm">
-                      <div className="flex justify-end mb-4 no-print">
-                        <button 
-                          onClick={exportToPDF}
-                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200"
-                        >
-                          <Download className="w-4 h-4" /> 导出 PDF 打印
-                        </button>
-                      </div>
-                      <ReactMarkdown>{practiceContent}</ReactMarkdown>
-                    </div>
-                  )}
-
-                  {activeAction === 'essay' && upgradedEssay && (
-                    <div className="space-y-8">
-                      <div className="flex justify-end gap-3 no-print">
-                        <button 
-                          onClick={() => playTTS(upgradedEssay)}
-                          className={cn(
-                            "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                            isPlayingAudio ? "bg-rose-500 text-white shadow-lg shadow-rose-200" : 
-                            (isTTSLoading || isPreGenerating) ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : 
-                            "bg-emerald-600 text-white shadow-lg shadow-emerald-200"
-                          )}
-                        >
-                          {isPlayingAudio ? <Square className="w-4 h-4 fill-current" /> : 
-                           (isTTSLoading || isPreGenerating) ? <Loader2 className="w-4 h-4 animate-spin" /> : 
-                           <Users className="w-4 h-4" />}
-                          {isPlayingAudio ? "停止朗读" : (isTTSLoading || isPreGenerating) ? "正在准备播音..." : "范文朗读 (AI)"}
-                        </button>
-                      </div>
-                      <div className="prose prose-indigo max-w-none">
-                        <ReactMarkdown>{upgradedEssay}</ReactMarkdown>
-                      </div>
-                    </div>
-                  )}
-
-                  {activeAction === 'graph' && (
-                    <div className="space-y-8">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-                        <div className="h-80 w-full">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({
-                              ...d,
-                              avg: [82, 75, 78, 70, 72][i]
-                            }))}>
-                              <PolarGrid stroke="#e2e8f0" />
-                              <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
-                              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                              <Radar name="个人" dataKey="value" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.3} />
-                              <Radar name="全班平均" dataKey="avg" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.1} strokeDasharray="4 4" />
-                              <Tooltip />
-                              <Legend />
-                            </RadarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className="space-y-4">
-                          <h4 className="font-bold text-slate-800">维度分析说明</h4>
-                          <div className="space-y-3">
-                            {[
-                              { label: '语言建构', desc: '词汇运用、语法规范、表达流畅度' },
-                              { label: '思维发展', desc: '逻辑严密性、批判性思维、推理能力' },
-                              { label: '审美鉴赏', desc: '文学修辞感知、情感共鸣、审美评价' },
-                              { label: '文化传承', desc: '传统文化理解、文言底蕴、文化自信' },
-                              { label: '表达创作', desc: '写作技巧、立意深度、素材整合' },
-                            ].map(dim => (
-                              <div key={dim.label} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                <span className="text-xs font-bold text-indigo-600 block mb-1">{dim.label}</span>
-                                <p className="text-[10px] text-slate-500">{dim.desc}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            <div className="p-6 border-t border-slate-100 text-center no-print">
-              <button 
-                onClick={() => { 
-                  setActiveAction(null); 
-                  setPracticeContent(null); 
-                  setUpgradedEssay(null); 
-                  if (audioRef.current) {
-                    audioRef.current.pause();
-                    setIsPlayingAudio(false);
-                  }
-                }}
-                className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all"
-              >
-                完成学习
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Student Modal */}
-      {isEditModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                <UserCircle className="w-5 h-5 text-indigo-600" />
-                {editingStudent ? '编辑学生信息' : '新增学生信息'}
-              </h3>
-              <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                <AlertCircle className="w-5 h-5 text-slate-400 rotate-45" />
-              </button>
-            </div>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              const choice = parseInt(formData.get('choice') as string);
-              const modern = parseInt(formData.get('modernReading') as string);
-              const classic = parseInt(formData.get('classicReading') as string);
-              const nonLinear = parseInt(formData.get('nonLinear') as string);
-              const dictation = parseInt(formData.get('dictation') as string);
-              const composition = parseInt(formData.get('composition') as string);
-              
-              handleSaveStudent({
-                id: formData.get('id') as string,
-                name: formData.get('name') as string,
-                choice,
-                modernReading: modern,
-                classicReading: classic,
-                nonLinear,
-                dictation,
-                composition,
-                total: choice + modern + classic + nonLinear + dictation + composition
-              });
-            }} className="p-8 space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">学号 / Student ID</label>
-                  <input name="id" defaultValue={editingStudent?.id} required disabled={!!editingStudent} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50" />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">姓名 / Name</label>
-                  <input name="name" defaultValue={editingStudent?.name} required className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-3 gap-4">
-                {[
-                  { name: 'choice', label: '选择题', max: 30 },
-                  { name: 'modernReading', label: '现代文', max: 30 },
-                  { name: 'classicReading', label: '文言文', max: 20 },
-                  { name: 'nonLinear', label: '非连续', max: 10 },
-                  { name: 'dictation', label: '默写', max: 10 },
-                  { name: 'composition', label: '作文', max: 50 },
-                ].map(field => (
-                  <div key={field.name} className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{field.label} (max {field.max})</label>
-                    <input 
-                      type="number" 
-                      name={field.name} 
-                      defaultValue={editingStudent ? (editingStudent as any)[field.name] : 0} 
-                      min="0" 
-                      max={field.max} 
-                      required 
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all" 
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl font-bold hover:bg-slate-200 transition-all">取消</button>
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all">保存信息</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Global Print Styles */}
-      <style>{`
-        @media print {
-          .no-print { display: none !important; }
-          body { background: white !important; }
-          .print\\:p-0 { padding: 0 !important; }
-          aside, header, nav { display: none !important; }
-          main { margin: 0 !important; padding: 0 !important; width: 100% !important; }
-        }
-      `}</style>
-      <aside className="fixed top-0 left-0 h-full w-64 bg-slate-900 text-white hidden lg:flex flex-col p-6 z-50">
-        <div className="flex items-center gap-3 mb-10 px-2">
-          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Sparkles className="text-white w-6 h-6" />
+    <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+      {/* Sidebar */}
+      <aside className="fixed top-0 left-0 h-full w-64 bg-slate-900 text-white hidden lg:flex flex-col p-8 z-50">
+        <div className="flex items-center gap-4 mb-12 px-2">
+          <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-500/20">
+            <Sparkles className="text-white w-7 h-7" />
           </div>
           <span className="font-bold text-xl tracking-tight">智语·SmartLexis</span>
         </div>
 
-        <nav className="space-y-2 flex-1">
+        <nav className="space-y-3 flex-1">
           {user?.role === 'teacher' && (
-            <button 
-              onClick={() => setView('teacher')}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
-                view === 'teacher' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              )}
-            >
-              <Users className="w-4 h-4" /> 班级概览
+            <button onClick={() => setView('teacher')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'teacher' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+              <BarChart3 className="w-5 h-5" /> 班级看板
             </button>
           )}
-          <button 
-            onClick={() => setView('student')}
-            className={cn(
-              "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
-              view === 'student' ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            )}
-          >
-            <UserCircle className="w-4 h-4" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
+          <button onClick={() => setView('student')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+            <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
           </button>
           
           {user?.role === 'teacher' && (
             <>
-              <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">数据管理</div>
-              <label className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
-                <Upload className="w-4 h-4" /> 成绩导入
+              <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
+              <label className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
+                <Upload className="w-5 h-5" /> 成绩导入
                 <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
               </label>
-              <button 
-                onClick={() => {
-                  const csv = "学号,姓名,选择题,现代文阅读,文言文阅读,非连续性文本,默写填空,作文\n2026001,学生A,25,24,15,8,9,42";
-                  const blob = new Blob([csv], { type: 'text/csv' });
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.setAttribute('hidden', '');
-                  a.setAttribute('href', url);
-                  a.setAttribute('download', '成绩导入模板.csv');
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
-              >
-                <Download className="w-4 h-4" /> 下载模板
-              </button>
-              <button 
-                onClick={() => {
-                  if (window.confirm('确定要清空所有学生数据吗？此操作不可撤销。')) {
-                    setStudents([]);
-                  }
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-rose-900/20 hover:text-rose-400 transition-all"
-              >
-                <AlertCircle className="w-4 h-4" /> 清空数据
-              </button>
             </>
           )}
         </nav>
 
-        <div className="mt-auto p-4 bg-slate-800/50 rounded-2xl border border-slate-700">
+        <div className="mt-auto p-5 bg-slate-800/50 rounded-[32px] border border-slate-700/50">
           <div className="flex items-center justify-between mb-2">
             <div>
-              <p className="text-xs text-slate-400 mb-1">当前登录</p>
-              <p className="text-sm font-bold">{user?.name || '未登录'}</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-black">{user?.role === 'teacher' ? '教师' : '学生'}</p>
+              <p className="text-sm font-bold truncate max-w-[120px]">{user?.name}</p>
             </div>
-            <button 
-              onClick={handleLogout}
-              className="p-2 text-slate-400 hover:text-rose-400 transition-colors"
-              title="退出登录"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <button onClick={handleLogout} className="p-2.5 text-slate-400 hover:text-rose-400 transition-colors"><LogOut className="w-5 h-5" /></button>
           </div>
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest">{user?.role === 'teacher' ? '教师' : '学生'}</p>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-64 p-6 md:p-10 max-w-7xl mx-auto">
-        
-        {view === 'teacher' && user?.role === 'teacher' ? (
-          <div className="space-y-8 animate-in fade-in duration-500">
-            <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">班级学情看板</h1>
-                <p className="text-slate-500 mt-1">高二(3)班 · 2026年春季第一次月考分析</p>
-              </div>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => { setEditingStudent(null); setIsEditModalOpen(true); }}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all"
-                >
-                  <Users className="w-4 h-4" />
-                  新增学生
-                </button>
-                <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 cursor-pointer transition-all shadow-sm">
-                  <Upload className="w-4 h-4" />
-                  导入
-                  <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
-                </label>
-                <div className="relative">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="搜索学生姓名..." 
-                    className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none w-64"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-                <button className="p-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"><Filter className="w-4 h-4" /></button>
-              </div>
-            </header>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <StatBox label="班级平均分" value={classStats.avg} subValue="+2.4" icon={TrendingUp} colorClass="bg-indigo-50 text-indigo-600" />
-              <StatBox label="及格率 (90+)" value={`${classStats.passRate}%`} subValue="↑ 5%" icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" />
-              <StatBox label="优秀率 (120+)" value={`${classStats.excellentRate}%`} subValue="稳定" icon={Award} colorClass="bg-amber-50 text-amber-600" />
-              <StatBox label="待关注人数" value="5" subValue="需辅导" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" />
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card title="分数段分布" className="lg:col-span-2">
-                <div className="h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[
-                      { range: '130+', count: 4 },
-                      { range: '120-130', count: 12 },
-                      { range: '110-120', count: 18 },
-                      { range: '100-110', count: 15 },
-                      { range: '90-100', count: 6 },
-                      { range: '<90', count: 5 },
-                    ]}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{fontSize: 12}} />
-                      <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12}} />
-                      <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
-                      <Bar dataKey="count" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={40}>
-                        { [0,1,2,3,4,5].map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={index === 5 ? '#f43f5e' : '#6366f1'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              <Card title="题型得分率排行" subtitle="全班平均表现">
-                <div className="space-y-5">
-                  {[
-                    { label: '选择题', val: 88, color: 'bg-emerald-500' },
-                    { label: '默写填空', val: 82, color: 'bg-emerald-400' },
-                    { label: '作文', val: 74, color: 'bg-indigo-500' },
-                    { label: '现代文阅读', val: 68, color: 'bg-amber-500' },
-                    { label: '文言文阅读', val: 52, color: 'bg-rose-500' },
-                  ].map(item => (
-                    <div key={item.label}>
-                      <div className="flex justify-between text-xs font-bold mb-1.5">
-                        <span>{item.label}</span>
-                        <span>{item.val}%</span>
-                      </div>
-                      <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={cn("h-full rounded-full", item.color)} style={{ width: `${item.val}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </div>
-
-            <Card title="学生成绩明细" subtitle={`共 ${filteredStudents.length} 条记录`}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                      <th className="pb-4 font-semibold">排名</th>
-                      <th className="pb-4 font-semibold">姓名</th>
-                      <th className="pb-4 font-semibold text-center text-slate-600">选择</th>
-                      <th className="pb-4 font-semibold text-center text-slate-600">现代文</th>
-                      <th className="pb-4 font-semibold text-center text-slate-600">文言文</th>
-                      <th className="pb-4 font-semibold text-center text-slate-600">作文</th>
-                      <th className="pb-4 font-semibold text-right">总分</th>
-                      <th className="pb-4 text-center">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {filteredStudents.slice(0, 20).map((s, idx) => (
-                      <tr key={s.id} className="group hover:bg-slate-50/80 transition-colors">
-                        <td className="py-4 text-sm font-medium text-slate-400">#{(idx + 1).toString().padStart(2, '0')}</td>
-                        <td className="py-4">
-                          <div className="font-bold text-slate-800">{s.name}</div>
-                          <div className="text-[10px] text-slate-400">{s.id}</div>
-                        </td>
-                        <td className="py-4 text-center text-sm">{s.choice}</td>
-                        <td className="py-4 text-center text-sm">{s.modernReading}</td>
-                        <td className="py-4 text-center text-sm">{s.classicReading}</td>
-                        <td className="py-4 text-center text-sm font-medium text-indigo-600">{s.composition}</td>
-                        <td className="py-4 text-right font-black text-slate-900">{s.total}</td>
-                        <td className="py-4">
-                          <div className="flex items-center justify-center gap-1">
-                            <button 
-                              onClick={() => { setSelectedStudentId(s.id); setView('student'); }}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                              title="查看报告"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => { setEditingStudent(s); setIsEditModalOpen(true); }}
-                              className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all"
-                              title="编辑信息"
-                            >
-                              <PenTool className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteStudent(s.id)}
-                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                              title="删除学生"
-                            >
-                              <AlertCircle className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          </div>
-        ) : (
-          <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-            <header className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                {user?.role === 'teacher' && (
-                  <button 
-                    onClick={() => setView('teacher')}
-                    className="p-2 hover:bg-slate-100 rounded-full transition-colors"
-                  >
-                    <ArrowRight className="w-5 h-5 rotate-180" />
-                  </button>
-                )}
+      <main className="lg:ml-64 p-8 md:p-12 max-w-7xl mx-auto">
+        <AnimatePresence mode="wait">
+          {view === 'teacher' ? (
+            <motion.div key="teacher" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-10">
+              <header className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                 <div>
-                  <h1 className="text-2xl font-bold flex items-center gap-2">
-                    {user?.role === 'student' ? '我的诊断报告' : `${selectedStudent.name} 的诊断报告`}
-                    <span className="text-xs font-normal bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">
-                      学号: {selectedStudent.id}
-                    </span>
-                  </h1>
+                  <h1 className="text-5xl font-black text-slate-900 tracking-tighter">班级学情看板</h1>
+                  <p className="text-slate-500 mt-3 font-bold text-lg">高二(3)班 · 2026年春季第一次月考分析</p>
                 </div>
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input type="text" placeholder="搜索姓名或学号..." className="pl-14 pr-6 py-4 bg-white border border-slate-200 rounded-[24px] text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none w-80 transition-all shadow-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                  </div>
+                  <button onClick={() => { setEditingStudent(null); setIsEditModalOpen(true); }} className="p-4 bg-indigo-600 text-white rounded-[24px] shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all"><Users className="w-6 h-6" /></button>
+                </div>
+              </header>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatBox label="班级平均分" value={classStats.avg} subValue="+2.4" icon={TrendingUp} colorClass="bg-indigo-50 text-indigo-600" delay={0.1} />
+                <StatBox label="及格率 (90+)" value={`${classStats.passRate}%`} subValue="↑ 5%" icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" delay={0.2} />
+                <StatBox label="优秀率 (120+)" value={`${classStats.excellentRate}%`} subValue="稳定" icon={Award} colorClass="bg-amber-50 text-amber-600" delay={0.3} />
+                <StatBox label="待关注人数" value="5" subValue="需辅导" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" delay={0.4} />
               </div>
-              <div className="text-right">
-                <div className="text-3xl font-black text-indigo-600">{selectedStudent.total}</div>
-                <div className="text-xs text-slate-400 font-bold uppercase tracking-widest">Total Score</div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <Card title="分数段分布" subtitle="全班成绩正态分布" className="lg:col-span-2" delay={0.5}>
+                  <div className="h-[360px] mt-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={[{ range: '130+', count: 4 }, { range: '120-130', count: 12 }, { range: '110-120', count: 18 }, { range: '100-110', count: 15 }, { range: '90-100', count: 6 }, { range: '<90', count: 5 }]}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 600}} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 600}} />
+                        <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 50px rgba(0,0,0,0.05)'}} />
+                        <Bar dataKey="count" fill="#6366f1" radius={[12, 12, 0, 0]} barSize={50}>
+                          {[0,1,2,3,4,5].map((_, index) => <Cell key={`cell-${index}`} fill={index === 5 ? '#f43f5e' : '#6366f1'} fillOpacity={0.8} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                <Card title="题型得分率排行" subtitle="全班平均表现" delay={0.6}>
+                  <div className="space-y-8 mt-6">
+                    {[{ label: '选择题', val: 88, color: 'bg-emerald-500' }, { label: '默写填空', val: 82, color: 'bg-emerald-400' }, { label: '作文', val: 74, color: 'bg-indigo-500' }, { label: '现代文阅读', val: 68, color: 'bg-amber-500' }, { label: '文言文阅读', val: 52, color: 'bg-rose-500' }].map(item => (
+                      <div key={item.label}>
+                        <div className="flex justify-between text-xs font-black mb-3"><span className="text-slate-600">{item.label}</span><span className="text-slate-900">{item.val}%</span></div>
+                        <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
+                          <motion.div initial={{ width: 0 }} animate={{ width: `${item.val}%` }} transition={{ duration: 1, delay: 0.8 }} className={cn("h-full rounded-full", item.color)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
               </div>
-            </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* AI Writing Analysis - NEW FEATURE */}
-              <Card title="AI 作文深度诊断" className="lg:col-span-3 bg-emerald-50/30 border-emerald-100">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <PenTool className="w-4 h-4 text-emerald-600" /> 提交手写作文
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        上传 2-5 张清晰的手写作文图片，AI 将自动识别文字并进行多维度深度诊断。
-                      </p>
+              <Card title="学生成绩明细" subtitle={`共 ${filteredStudents.length} 条记录`} delay={0.7}>
+                <div className="overflow-x-auto mt-6">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100">
+                        <th className="pb-6">排名</th><th className="pb-6">姓名</th><th className="pb-6 text-center">选择</th><th className="pb-6 text-center">现代文</th><th className="pb-6 text-center">文言文</th><th className="pb-6 text-center">作文</th><th className="pb-6 text-right">总分</th><th className="pb-6 text-center">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {filteredStudents.map((s, idx) => (
+                        <tr key={s.id} className="group hover:bg-slate-50/80 transition-all duration-300">
+                          <td className="py-6 text-sm font-black text-slate-300">#{(idx + 1).toString().padStart(2, '0')}</td>
+                          <td className="py-6"><div className="font-black text-slate-900 text-base">{s.name}</div><div className="text-[10px] text-slate-400 font-bold tracking-wider">{s.id}</div></td>
+                          <td className="py-6 text-center text-sm font-bold text-slate-600">{s.choice}</td>
+                          <td className="py-6 text-center text-sm font-bold text-slate-600">{s.modernReading}</td>
+                          <td className="py-6 text-center text-sm font-bold text-slate-600">{s.classicReading}</td>
+                          <td className="py-6 text-center text-sm font-black text-indigo-600">{s.composition}</td>
+                          <td className="py-6 text-right"><span className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-black shadow-lg shadow-slate-900/10">{s.total}</span></td>
+                          <td className="py-6"><div className="flex items-center justify-center"><button onClick={() => { setSelectedStudentId(s.id); setView('student'); }} className="p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all"><ChevronRight className="w-6 h-6" /></button></div></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </motion.div>
+          ) : (
+            <motion.div key="student" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-10">
+              <header className="flex items-center justify-between">
+                <div className="flex items-center gap-8">
+                  {user?.role === 'teacher' && (
+                    <button onClick={() => setView('teacher')} className="w-14 h-14 flex items-center justify-center bg-white border border-slate-200 rounded-[24px] hover:bg-slate-50 transition-all shadow-sm hover:shadow-md"><ArrowRight className="w-6 h-6 rotate-180" /></button>
+                  )}
+                  <div>
+                    <h1 className="text-4xl font-black text-slate-900 tracking-tighter">{user?.role === 'student' ? '我的诊断报告' : `${selectedStudent.name} 的诊断报告`}</h1>
+                    <div className="flex items-center gap-4 mt-3">
+                      <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-full uppercase tracking-[0.15em]">学号: {selectedStudent.id}</span>
+                      <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-4 py-1.5 rounded-full uppercase tracking-[0.15em]">2026年春季月考</span>
                     </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-6xl font-black text-indigo-600 leading-none tracking-tighter">{selectedStudent.total}</div>
+                  <div className="text-[10px] text-slate-400 font-black uppercase tracking-[0.3em] mt-3">Total Score</div>
+                </div>
+              </header>
 
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">作文题目 / Essay Title</label>
-                        <input 
-                          type="text" 
-                          placeholder="请输入作文题目..."
-                          className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
-                          value={essayTitle}
-                          onChange={(e) => setEssayTitle(e.target.value)}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-3">
-                        {essayImages.map((img, idx) => (
-                          <div key={idx} className="relative aspect-[3/4] rounded-xl overflow-hidden border border-slate-200 group">
-                            <img src={img} alt={`Essay page ${idx + 1}`} className="w-full h-full object-cover" />
-                            <button 
-                              onClick={() => setEssayImages(prev => prev.filter((_, i) => i !== idx))}
-                              className="absolute top-1 right-1 p-1 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <AlertCircle className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                        {essayImages.length < 5 && (
-                          <label className="aspect-[3/4] rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all">
-                            <ImageIcon className="w-6 h-6 text-slate-300" />
-                            <span className="text-[10px] font-bold text-slate-400">添加图片</span>
-                            <input type="file" accept="image/*" multiple className="hidden" onChange={handleEssayImageUpload} />
-                          </label>
-                        )}
-                      </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
+                {/* AI Writing - Bento Large */}
+                <Card className="md:col-span-3 lg:col-span-3 bg-emerald-50/30 border-emerald-100/50" delay={0.1}>
+                  <div className="flex items-center justify-between mb-10">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-emerald-100 rounded-[20px] flex items-center justify-center"><PenTool className="w-6 h-6 text-emerald-600" /></div>
+                      <div><h3 className="text-xl font-bold text-slate-900">AI 作文深度诊断</h3><p className="text-xs text-slate-500 font-bold">多维度自动阅卷与修改建议</p></div>
                     </div>
-
-                    <button 
-                      onClick={analyzeEssay}
-                      disabled={isAnalyzingEssay || essayImages.length < 2 || !essayTitle.trim()}
-                      className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-200 disabled:opacity-50"
-                    >
-                      {isAnalyzingEssay ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                      {isAnalyzingEssay ? 'AI 正在深度阅卷...' : '开始深度诊断'}
-                    </button>
+                    {essayAnalysis && <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><History className="w-4 h-4" /> {new Date(essayAnalysis.date).toLocaleDateString()}</div>}
                   </div>
 
-                  <div className="bg-white rounded-2xl border border-slate-100 p-6 min-h-[300px] flex flex-col">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-indigo-600" /> 诊断报告
-                      </h4>
-                      {essayAnalysis && (
-                        <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                          <History className="w-3 h-3" /> {new Date(essayAnalysis.date).toLocaleDateString()}
-                        </span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                    <div className="space-y-8">
+                      <div className="space-y-6">
+                        <div className="relative">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 block ml-1">作文题目 / Essay Title</label>
+                          <input type="text" placeholder="请输入作文题目..." className="w-full px-6 py-4 bg-white border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-emerald-500/5 focus:border-emerald-500 transition-all shadow-sm" value={essayTitle} onChange={(e) => setEssayTitle(e.target.value)} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                          {essayImages.map((img, idx) => (
+                            <motion.div key={idx} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="relative aspect-[3/4] rounded-[24px] overflow-hidden border border-slate-200 group shadow-lg">
+                              <img src={img} alt="Essay" className="w-full h-full object-cover" />
+                              <button onClick={() => setEssayImages(prev => prev.filter((_, i) => i !== idx))} className="absolute top-3 right-3 p-2 bg-rose-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-xl"><AlertCircle className="w-4 h-4" /></button>
+                            </motion.div>
+                          ))}
+                          {essayImages.length < 5 && (
+                            <label className="aspect-[3/4] rounded-[24px] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-all group">
+                              <ImageIcon className="w-10 h-10 text-slate-300 group-hover:text-emerald-400 transition-colors" />
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">添加图片</span>
+                              <input type="file" accept="image/*" multiple className="hidden" onChange={handleEssayImageUpload} />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                      <button onClick={analyzeEssay} disabled={isAnalyzingEssay || essayImages.length < 1 || !essayTitle.trim()} className="w-full py-5 bg-emerald-600 text-white rounded-[24px] font-black text-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-4 shadow-2xl shadow-emerald-200 disabled:opacity-50 disabled:shadow-none">
+                        {isAnalyzingEssay ? <Loader2 className="w-6 h-6 animate-spin" /> : <Sparkles className="w-6 h-6" />}
+                        {isAnalyzingEssay ? 'AI 正在深度阅卷...' : '开始深度诊断'}
+                      </button>
+                    </div>
+
+                    <div className="bg-white rounded-[32px] border border-slate-100 p-8 min-h-[450px] flex flex-col shadow-inner overflow-hidden">
+                      {isAnalyzingEssay ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
+                          <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center animate-bounce"><Sparkles className="w-10 h-10 text-emerald-600" /></div>
+                          <p className="text-lg text-slate-500 font-black animate-pulse">AI 正在阅读并分析您的作文...</p>
+                        </div>
+                      ) : essayAnalysis ? (
+                        <div className="flex-1 overflow-y-auto pr-4 custom-scrollbar prose prose-sm prose-indigo max-w-none prose-p:leading-relaxed">
+                          <ReactMarkdown>{essayAnalysis.analysis}</ReactMarkdown>
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4 opacity-30">
+                          <FileText className="w-20 h-20 text-slate-300" />
+                          <p className="text-base text-slate-400 font-black">暂无分析报告，请先提交作文</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Score Summary */}
+                <Card className="md:col-span-1 lg:col-span-1" title="得分明细" delay={0.2}>
+                  <div className="space-y-6 mt-8">
+                    {[{ label: '选择题', score: selectedStudent.choice, max: 30, color: 'bg-indigo-500' }, { label: '现代文', score: selectedStudent.modernReading, max: 30, color: 'bg-indigo-400' }, { label: '文言文', score: selectedStudent.classicReading, max: 20, color: 'bg-amber-500' }, { label: '非连续', score: selectedStudent.nonLinear, max: 10, color: 'bg-emerald-500' }, { label: '默写', score: selectedStudent.dictation, max: 10, color: 'bg-emerald-400' }, { label: '作文', score: selectedStudent.composition, max: 50, color: 'bg-rose-500' }].map(item => (
+                      <div key={item.label}>
+                        <div className="flex justify-between text-[10px] font-black mb-2.5"><span className="text-slate-500 uppercase tracking-widest">{item.label}</span><span className="text-slate-900">{item.score} / {item.max}</span></div>
+                        <div className="w-full h-2 bg-slate-50 rounded-full overflow-hidden">
+                          <motion.div initial={{ width: 0 }} animate={{ width: `${(item.score/item.max)*100}%` }} transition={{ duration: 1, delay: 0.5 }} className={cn("h-full rounded-full", item.color)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+
+                {/* AI Prescription - Full Width */}
+                <Card className="md:col-span-3 lg:col-span-4 bg-indigo-50/30 border-indigo-100/50" delay={0.3}>
+                  <div className="flex flex-col lg:flex-row gap-12">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-4 mb-10">
+                        <div className="w-12 h-12 bg-indigo-100 rounded-[20px] flex items-center justify-center"><BrainCircuit className="w-6 h-6 text-indigo-600" /></div>
+                        <div><h3 className="text-xl font-bold text-slate-900">AI 智能学习处方</h3><p className="text-xs text-slate-500 font-bold">基于大数据分析的个性化提升路径</p></div>
+                      </div>
+
+                      {!aiPrescription && !isGenerating ? (
+                        <div className="py-16 text-center space-y-8">
+                          <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center mx-auto shadow-xl border border-indigo-50"><Sparkles className="w-12 h-12 text-indigo-600" /></div>
+                          <div className="space-y-3"><h3 className="text-2xl font-black text-slate-900">生成您的专属学习处方</h3><p className="text-base text-slate-500 max-w-md mx-auto leading-relaxed font-medium">AI 将深度解析您的各项得分，挖掘潜在提分空间，并为您量身定制本周的学习计划。</p></div>
+                          <button onClick={() => generateAIAnalysis(selectedStudent)} className="px-10 py-4 bg-indigo-600 text-white rounded-[24px] font-black text-lg hover:bg-indigo-700 transition-all flex items-center gap-4 mx-auto shadow-2xl shadow-indigo-200"><Sparkles className="w-6 h-6" /> 开启智能分析</button>
+                        </div>
+                      ) : isGenerating ? (
+                        <div className="py-24 text-center space-y-8">
+                          <Loader2 className="w-16 h-16 text-indigo-600 animate-spin mx-auto" />
+                          <div className="space-y-3"><p className="text-indigo-600 font-black text-2xl animate-pulse">AI 正在深度分析学情数据...</p><p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.4em]">Processing Data</p></div>
+                        </div>
+                      ) : (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[40px] border border-indigo-100 shadow-sm relative group">
+                          <div className="absolute top-8 right-8 flex gap-3 no-print">
+                            <button onClick={() => playTTS(aiPrescription || '')} className={cn("p-3.5 rounded-2xl transition-all shadow-sm", isPlayingAudio ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50")}>{isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Activity className="w-5 h-5" />}</button>
+                            <button onClick={() => generateAIAnalysis(selectedStudent)} className="p-3.5 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><TrendingUp className="w-5 h-5" /></button>
+                          </div>
+                          <div className="prose prose-indigo max-w-none prose-p:leading-relaxed prose-headings:font-serif prose-headings:tracking-tight">
+                            <ReactMarkdown>{aiPrescription}</ReactMarkdown>
+                          </div>
+                        </motion.div>
                       )}
                     </div>
 
-                    {isAnalyzingEssay ? (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center space-y-4">
-                        <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center animate-bounce">
-                          <Sparkles className="w-6 h-6 text-emerald-600" />
+                    <div className="w-full lg:w-80 space-y-8">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">推荐行动路径 / Action Path</h4>
+                      <div className="grid grid-cols-1 gap-5">
+                        {[
+                          { id: 'practice', title: '专项提分练习', desc: '针对薄弱项的精选试题', icon: Target, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                          { id: 'essay', title: '范文升格赏析', desc: '高分作文与名家名篇', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                          { id: 'graph', title: '核心素养图谱', desc: '查看关联知识点掌握', icon: BrainCircuit, color: 'text-amber-600', bg: 'bg-amber-50' },
+                        ].map(action => (
+                          <button key={action.id} onClick={() => setActiveAction(action.id as any)} className="group p-6 bg-white border border-slate-100 rounded-[32px] text-left hover:border-indigo-200 hover:shadow-2xl transition-all duration-500">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center", action.bg)}><action.icon className={cn("w-6 h-6", action.color)} /></div>
+                              <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-2 transition-all" />
+                            </div>
+                            <h5 className="text-base font-black text-slate-900 mb-1.5">{action.title}</h5>
+                            <p className="text-[11px] text-slate-400 font-bold leading-relaxed">{action.desc}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Radar Chart */}
+                <Card className="md:col-span-1 lg:col-span-2" title="核心素养维度" subtitle="基于 6 大题型加权计算" delay={0.4}>
+                  <div className="h-[380px] mt-6">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({ ...d, avg: [82, 75, 78, 70, 72][i] }))}>
+                        <PolarGrid stroke="#e2e8f0" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 800 }} />
+                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                        <Radar name="个人得分率" dataKey="value" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.2} strokeWidth={4} />
+                        <Radar name="全班平均" dataKey="avg" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.05} strokeDasharray="4 4" />
+                        <Tooltip contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 50px rgba(0,0,0,0.05)'}} />
+                        <Legend verticalAlign="bottom" wrapperStyle={{ paddingTop: '30px' }} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+
+                {/* History */}
+                <Card className="md:col-span-2 lg:col-span-2" title="历史诊断记录" subtitle="作文深度诊断历史" delay={0.5}>
+                  <div className="mt-8 space-y-4 max-h-[380px] overflow-y-auto pr-4 custom-scrollbar">
+                    {analysisHistory.length > 0 ? analysisHistory.map((item) => (
+                      <button key={item.id} onClick={() => setEssayAnalysis(item)} className={cn("w-full p-6 rounded-[24px] border text-left transition-all duration-300 group", essayAnalysis?.id === item.id ? "bg-indigo-50 border-indigo-200" : "bg-white border-slate-100 hover:border-indigo-100 hover:shadow-lg")}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className={cn("text-base font-black", essayAnalysis?.id === item.id ? "text-indigo-600" : "text-slate-700")}>{item.title}</span>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(item.date).toLocaleDateString()}</span>
                         </div>
-                        <p className="text-sm text-slate-500 font-medium">AI 正在阅读并分析您的作文...</p>
-                      </div>
-                    ) : essayAnalysis ? (
-                      <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar prose prose-sm prose-indigo max-w-none">
-                        <ReactMarkdown>{essayAnalysis.analysis}</ReactMarkdown>
-                      </div>
-                    ) : (
-                      <div className="flex-1 flex flex-col items-center justify-center text-center space-y-2 opacity-40">
-                        <PenTool className="w-12 h-12 text-slate-300" />
-                        <p className="text-sm text-slate-400">暂无分析报告，请先提交作文</p>
+                        <p className="text-xs text-slate-400 line-clamp-1 font-bold leading-relaxed">{item.analysis.substring(0, 120)}...</p>
+                      </button>
+                    )) : (
+                      <div className="py-24 text-center opacity-30">
+                        <History className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                        <p className="text-base text-slate-400 font-black">暂无历史记录</p>
                       </div>
                     )}
                   </div>
-                </div>
+                </Card>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
 
-                {analysisHistory.length > 0 && (
-                  <div className="mt-8 pt-6 border-t border-slate-100">
-                    <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">历史诊断记录</h5>
-                    <div className="flex gap-4 overflow-x-auto pb-2">
-                      {analysisHistory.map((item, idx) => (
-                        <button 
-                          key={item.id}
-                          onClick={() => setEssayAnalysis(item)}
-                          className={cn(
-                            "flex-shrink-0 px-4 py-2 rounded-xl border text-xs font-medium transition-all",
-                            essayAnalysis?.id === item.id ? "bg-indigo-50 border-indigo-200 text-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-200"
-                          )}
-                        >
-                          {item.title} ({new Date(item.date).toLocaleDateString()})
-                        </button>
-                      ))}
+      {/* Action Modals */}
+      <AnimatePresence>
+        {activeAction && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6 overflow-y-auto">
+            <motion.div initial={{ scale: 0.95, y: 40 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 40 }} className="bg-white rounded-[48px] w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+              <div className="p-10 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div>
+                  <h3 className="text-3xl font-black text-slate-900 flex items-center gap-4">
+                    {activeAction === 'practice' && <><Target className="text-indigo-600" /> 专项提分练习</>}
+                    {activeAction === 'essay' && <><Award className="text-emerald-600" /> 范文升格赏析</>}
+                    {activeAction === 'graph' && <><BrainCircuit className="text-amber-600" /> 核心素养图谱</>}
+                  </h3>
+                  <p className="text-slate-500 text-base font-bold mt-2 tracking-tight">基于 AI 诊断结果生成的个性化提升方案</p>
+                </div>
+                <button onClick={() => setActiveAction(null)} className="w-16 h-16 flex items-center justify-center bg-white border border-slate-200 rounded-[24px] hover:bg-slate-50 transition-all shadow-sm hover:rotate-90 duration-500"><AlertCircle className="w-8 h-8 text-slate-400 rotate-45" /></button>
+              </div>
+              <div className="p-12 overflow-y-auto flex-1 custom-scrollbar">
+                {activeAction === 'graph' ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+                    <div className="h-[450px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent)}>
+                          <PolarGrid stroke="#e2e8f0" />
+                          <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 14, fontWeight: 800 }} />
+                          <Radar name="个人" dataKey="value" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.3} strokeWidth={5} />
+                          <Tooltip />
+                        </RadarChart>
+                      </ResponsiveContainer>
                     </div>
+                    <div className="space-y-8">
+                      <h4 className="text-2xl font-black text-slate-800 font-serif italic tracking-tight">维度深度解析 / Analysis</h4>
+                      <div className="space-y-5">
+                        {[{ label: '语言建构', desc: '词汇运用、语法规范、表达流畅度', score: getLiteracyData(selectedStudent)[0].value }, { label: '思维发展', desc: '逻辑严密性、批判性思维、推理能力', score: getLiteracyData(selectedStudent)[1].value }, { label: '审美鉴赏', desc: '文学修辞感知、情感共鸣、审美评价', score: getLiteracyData(selectedStudent)[2].value }, { label: '文化传承', desc: '传统文化理解、文言底蕴、文化自信', score: getLiteracyData(selectedStudent)[3].value }].map(dim => (
+                          <div key={dim.label} className="p-6 bg-slate-50 rounded-[32px] border border-slate-100 hover:border-indigo-100 transition-all">
+                            <div className="flex justify-between items-center mb-3"><span className="text-base font-black text-indigo-600">{dim.label}</span><span className="text-sm font-black text-slate-400">{dim.score}%</span></div>
+                            <p className="text-sm text-slate-500 leading-relaxed font-medium">{dim.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="prose prose-indigo max-w-none prose-p:leading-loose prose-headings:font-serif">
+                    <div className="p-12 bg-slate-50 rounded-[40px] border border-slate-100 italic text-slate-400 text-center text-lg font-bold">AI 正在为您生成深度学习内容，请稍后...</div>
                   </div>
                 )}
-              </Card>
+              </div>
+              <div className="p-10 border-t border-slate-100 flex justify-center"><button onClick={() => setActiveAction(null)} className="px-16 py-5 bg-slate-900 text-white rounded-[24px] font-black text-lg hover:bg-slate-800 transition-all shadow-2xl shadow-slate-200">完成学习</button></div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-              {/* AI Prescription */}
-              <Card title="AI 智能学习处方" className="lg:col-span-3 bg-indigo-50/50 border-indigo-100">
-                <div className="flex flex-col md:flex-row gap-8 items-start">
-                  <div className="flex-1 space-y-4">
-                    {!aiPrescription && !isGenerating ? (
-                      <div className="py-8 text-center space-y-4">
-                        <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto">
-                          <BrainCircuit className="w-8 h-8 text-indigo-600" />
-                        </div>
-                        <div className="space-y-2">
-                          <h3 className="text-lg font-bold text-slate-900">获取个性化 AI 诊断</h3>
-                          <p className="text-slate-500 max-w-md mx-auto">
-                            基于学生的考试数据，利用大语言模型生成深度学情分析与针对性提升建议。
-                          </p>
-                        </div>
-                        <button 
-                          onClick={() => generateAIAnalysis(selectedStudent)}
-                          className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-2 mx-auto shadow-lg shadow-indigo-200"
-                        >
-                          <Sparkles className="w-4 h-4" />
-                          开始智能分析
-                        </button>
-                      </div>
-                    ) : isGenerating ? (
-                      <div className="py-12 text-center space-y-4">
-                        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mx-auto" />
-                        <p className="text-indigo-600 font-medium animate-pulse">AI 正在深度分析学情数据，请稍候...</p>
-                      </div>
-                    ) : (
-                      <div className="prose prose-indigo max-w-none">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-2 text-indigo-700 font-bold">
-                            <Sparkles className="w-5 h-5" />
-                            AI 诊断结果
-                          </div>
-                          <button 
-                            onClick={() => generateAIAnalysis(selectedStudent)}
-                            className="text-xs text-indigo-600 hover:underline flex items-center gap-1"
-                          >
-                            <TrendingUp className="w-3 h-3" /> 重新生成
-                          </button>
-                        </div>
-                        <div className="bg-white p-6 rounded-2xl border border-indigo-100 shadow-sm text-slate-700 leading-relaxed prose prose-indigo max-w-none">
-                          <ReactMarkdown>{aiPrescription}</ReactMarkdown>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="w-full md:w-72 space-y-4">
-                    <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider">推荐行动路径</h4>
-                    <div className="space-y-3">
-                      <button 
-                        onClick={fetchPractice}
-                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-bold text-slate-900">专项练习</span>
-                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                        </div>
-                        <p className="text-xs text-slate-500">针对薄弱项的精选试题集</p>
-                      </button>
-                      <button 
-                        onClick={fetchUpgradedEssay}
-                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-bold text-slate-900">范文赏析</span>
-                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                        </div>
-                        <p className="text-xs text-slate-500">高分作文与名家名篇推荐</p>
-                      </button>
-                      <button 
-                        onClick={() => setActiveAction('graph')}
-                        className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-left hover:border-indigo-300 hover:shadow-md transition-all group"
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-bold text-slate-900">知识图谱</span>
-                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
-                        </div>
-                        <p className="text-xs text-slate-500">查看关联知识点掌握情况</p>
-                      </button>
-                    </div>
-                  </div>
+      {/* Edit Student Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[100] flex items-center justify-center p-6">
+            <motion.div initial={{ scale: 0.95, y: 40 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 40 }} className="bg-white rounded-[48px] w-full max-w-lg overflow-hidden shadow-2xl">
+              <div className="p-10 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <h3 className="font-black text-slate-900 text-xl flex items-center gap-4"><UserCircle className="w-8 h-8 text-indigo-600" /> {editingStudent ? '编辑学生信息' : '新增学生信息'}</h3>
+                <button onClick={() => setIsEditModalOpen(false)} className="w-12 h-12 flex items-center justify-center bg-white border border-slate-200 rounded-2xl hover:bg-slate-50 transition-all"><AlertCircle className="w-6 h-6 text-slate-400 rotate-45" /></button>
+              </div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const choice = parseInt(formData.get('choice') as string);
+                const modern = parseInt(formData.get('modernReading') as string);
+                const classic = parseInt(formData.get('classicReading') as string);
+                const nonLinear = parseInt(formData.get('nonLinear') as string);
+                const dictation = parseInt(formData.get('dictation') as string);
+                const composition = parseInt(formData.get('composition') as string);
+                handleSaveStudent({ id: formData.get('id') as string, name: formData.get('name') as string, choice, modernReading: modern, classicReading: classic, nonLinear, dictation, composition, total: choice + modern + classic + nonLinear + dictation + composition });
+              }} className="p-12 space-y-10">
+                <div className="grid grid-cols-2 gap-8">
+                  <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">学号 / ID</label><input name="id" defaultValue={editingStudent?.id} required disabled={!!editingStudent} className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all disabled:opacity-50" /></div>
+                  <div className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-2">姓名 / Name</label><input name="name" defaultValue={editingStudent?.name} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all" /></div>
                 </div>
-              </Card>
-
-              {/* Radar Chart */}
-              <Card title="核心素养维度" subtitle="基于 6 大题型加权计算">
-                <div className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({
-                      ...d,
-                      avg: [82, 75, 78, 70, 72][i] // Mock class average
-                    }))}>
-                      <PolarGrid stroke="#e2e8f0" />
-                      <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 12 }} />
-                      <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                      <Radar
-                        name="个人得分率"
-                        dataKey="value"
-                        stroke="#4f46e5"
-                        fill="#4f46e5"
-                        fillOpacity={0.3}
-                      />
-                      <Radar
-                        name="全班平均"
-                        dataKey="avg"
-                        stroke="#94a3b8"
-                        fill="#94a3b8"
-                        fillOpacity={0.1}
-                        strokeDasharray="4 4"
-                      />
-                      <Tooltip contentStyle={{borderRadius: '12px'}} />
-                      <Legend verticalAlign="bottom" />
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-
-              {/* Detailed Scores */}
-              <Card title="题型得分明细" className="lg:col-span-2">
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-                  {[
-                    { label: '基础选择', score: selectedStudent.choice, max: 30, icon: CheckCircle2 },
-                    { label: '现代文阅读', score: selectedStudent.modernReading, max: 30, icon: BookOpen },
-                    { label: '文言文阅读', score: selectedStudent.classicReading, max: 20, icon: Library },
-                    { label: '非连续文本', score: selectedStudent.nonLinear, max: 10, icon: BrainCircuit },
-                    { label: '默写填空', score: selectedStudent.dictation, max: 10, icon: PenTool },
-                    { label: '作文', score: selectedStudent.composition, max: 50, icon: Award },
-                  ].map(item => (
-                    <div key={item.label} className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <div className="flex items-center gap-2 text-slate-500 text-xs font-bold mb-2">
-                        <item.icon className="w-3 h-3" /> {item.label}
-                      </div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xl font-black text-slate-800">{item.score}</span>
-                        <span className="text-xs text-slate-400">/ {item.max}</span>
-                      </div>
-                      <div className="mt-2 w-full h-1 bg-slate-200 rounded-full overflow-hidden">
-                        <div 
-                          className={cn("h-full rounded-full", (item.score/item.max) > 0.8 ? "bg-emerald-500" : (item.score/item.max) > 0.6 ? "bg-amber-500" : "bg-rose-500")} 
-                          style={{ width: `${(item.score/item.max)*100}%` }} 
-                        />
-                      </div>
-                    </div>
+                <div className="grid grid-cols-3 gap-6">
+                  {[{ name: 'choice', label: '选择', max: 30 }, { name: 'modernReading', label: '现代文', max: 30 }, { name: 'classicReading', label: '文言文', max: 20 }, { name: 'nonLinear', label: '非连续', max: 10 }, { name: 'dictation', label: '默写', max: 10 }, { name: 'composition', label: '作文', max: 50 }].map(field => (
+                    <div key={field.name} className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{field.label}</label><input type="number" name={field.name} defaultValue={editingStudent ? (editingStudent as any)[field.name] : 0} min="0" max={field.max} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all" /></div>
                   ))}
                 </div>
-              </Card>
-
-              {/* AI Prescription */}
-              <div className="lg:col-span-3">
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-                    <Sparkles className="text-white w-4 h-4" />
-                  </div>
-                  <h2 className="text-xl font-bold">AI 智能学习处方</h2>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-2xl border-l-4 border-l-rose-500 border border-slate-200 shadow-sm">
-                    <h4 className="font-bold text-slate-900 flex items-center gap-2 mb-3">
-                      <AlertCircle className="w-4 h-4 text-rose-500" /> 重点攻坚：文言文断句与实词
-                    </h4>
-                    <p className="text-sm text-slate-600 leading-relaxed mb-4">
-                      诊断显示你在“文化传承”维度得分率仅为 {Math.round((selectedStudent.classicReading/20)*100)}%。
-                      主要失分点在于文言虚词的用法辨析。建议本周完成《世说新语》选段的精读练习，并整理 20 个核心实词。
-                    </p>
-                    <button className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:gap-2 transition-all">
-                      获取推荐练习题 <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-
-                  <div className="bg-white p-6 rounded-2xl border-l-4 border-l-indigo-500 border border-slate-200 shadow-sm">
-                    <h4 className="font-bold text-slate-900 flex items-center gap-2 mb-3">
-                      <TrendingUp className="w-4 h-4 text-indigo-500" /> 进阶建议：作文立意深度
-                    </h4>
-                    <p className="text-sm text-slate-600 leading-relaxed mb-4">
-                      你的作文分数（{selectedStudent.composition}/50）处于班级中上游。
-                      若想突破 45 分，需在“思维发展”维度加强。建议关注近期社会热点评论，练习从多维度切入论点，提升论证的逻辑严密性。
-                    </p>
-                    <button className="text-xs font-bold text-indigo-600 flex items-center gap-1 hover:gap-2 transition-all">
-                      查看优秀范文解析 <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+                <div className="pt-6 flex gap-6"><button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-5 bg-slate-100 text-slate-600 rounded-[24px] font-black text-lg hover:bg-slate-200 transition-all">取消</button><button type="submit" className="flex-1 py-5 bg-indigo-600 text-white rounded-[24px] font-black text-lg hover:bg-indigo-700 shadow-2xl shadow-indigo-200 transition-all">保存信息</button></div>
+              </form>
+            </motion.div>
+          </motion.div>
         )}
-      </main>
+      </AnimatePresence>
     </div>
   );
 }
