@@ -226,7 +226,7 @@ export default function App() {
       // 强制根据角色设置初始视图
       if (userData.role === 'student') {
         setView('student');
-        setSelectedStudentId(userData.uid);
+        setSelectedStudentId(userData.studentId || userData.uid);
         fetchAnalysisHistory(userData.uid);
       } else if (userData.role === 'admin') {
         setView('admin');
@@ -793,7 +793,7 @@ export default function App() {
       localStorage.setItem('lexis_user', JSON.stringify(userData));
       if (userData.role === 'student') {
         setView('student');
-        setSelectedStudentId(userData.uid);
+        setSelectedStudentId(userData.studentId || userData.uid);
         fetchAnalysisHistory(userData.uid);
       } else if (userData.role === 'admin') {
         setView('admin');
