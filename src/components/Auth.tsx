@@ -10,6 +10,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [studentId, setStudentId] = useState('');
   const [role, setRole] = useState<'teacher' | 'student'>('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -46,6 +47,7 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
             email,
             password, // 实际开发中绝不能明文存储
             name,
+            studentId: role === 'student' ? studentId : undefined,
             role,
             createdAt: new Date().toISOString()
           };
@@ -144,6 +146,20 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                     <option value="teacher">教师 (Teacher)</option>
                   </select>
                 </div>
+                {role === 'student' && (
+                  <div className="col-span-2 animate-in fade-in slide-in-from-top-2">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">学号 / Student ID</label>
+                    <input 
+                      type="text" 
+                      required 
+                      placeholder="请输入您的学号 (如: 2026001)"
+                      className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                      value={studentId}
+                      onChange={(e) => setStudentId(e.target.value)}
+                    />
+                    <p className="mt-1.5 ml-1 text-[9px] text-slate-400">请填写老师导入成绩时使用的学号，以便查看您的诊断报告。</p>
+                  </div>
+                )}
               </div>
             )}
             <div>
