@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Database, Trash2, Shield, Search, 
-  History, AlertCircle, CheckCircle2, Loader2,
-  FileText, Trash
+  History, AlertCircle, Loader2, Trash
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -25,28 +24,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     loadData();
   }, []);
 
-  const loadData = () => {
-    const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
-    setMockUsers(Object.values(users));
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/users');
+      if (response.ok) {
+        const users = await response.json();
+        setMockUsers(users);
+      }
+    } catch (error) {
+      console.error("Load users error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const clearAllData = () => {
     if (window.confirm('确定要清除所有本地存储的数据吗？这将删除所有注册用户和历史记录。')) {
-      localStorage.removeItem('lexis_mock_users');
-      localStorage.removeItem('lexis_user');
-      // Also clear history if it's in localStorage
-      // For now, we assume history is handled by the API, but if it's mock, we might need to clear it too.
-      alert('数据已清除，请重新登录。');
+      localStorage.clear();
+      alert('本地存储已清除，请重新登录。');
       onLogout();
     }
   };
 
-  const deleteUser = (email: string) => {
-    if (window.confirm(`确定要删除用户 ${email} 吗？`)) {
-      const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
-      delete users[email];
-      localStorage.setItem('lexis_mock_users', JSON.stringify(users));
-      loadData();
+  const deleteUser = async (uid: string) => {
+    if (window.confirm(`确定要删除该用户吗？`)) {
+      try {
+        const response = await fetch(`/api/admin/users/${uid}`, { method: 'DELETE' });
+        if (response.ok) {
+          loadData();
+        }
+      } catch (error) {
+        console.error("Delete user error:", error);
+      }
     }
   };
 
@@ -118,7 +128,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         </header>
 
         <main className="flex-1 overflow-y-auto p-8">
-          {activeTab === 'users' ? (
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+            </div>
+          ) : activeTab === 'users' ? (
             <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -132,7 +146,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredUsers.map((u) => (
-                    <tr key={u.email} className="hover:bg-slate-50/50 transition-colors">
+                    <tr key={u.uid} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-xs">
@@ -155,7 +169,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button 
-                          onClick={() => deleteUser(u.email)}
+                          onClick={() => deleteUser(u.uid)}
                           className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -163,13 +177,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                       </td>
                     </tr>
                   ))}
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic text-sm">
-                        未找到匹配的用户
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
@@ -190,7 +197,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
                     <p className="text-xs text-rose-700 leading-relaxed">
-                      警告：此操作将永久删除所有本地存储的用户账户、作文诊断历史和系统配置。操作不可撤销，请谨慎操作。
+                      警告：此操作将永久删除所有本地存储的用户账户、作文诊断历史和系统配置。
                     </p>
                   </div>
                   
@@ -200,20 +207,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   >
                     <Trash className="w-4 h-4" /> 清除所有本地数据
                   </button>
-                </div>
-              </div>
-
-              <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">系统状态</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">总用户数</p>
-                    <p className="text-2xl font-black text-slate-800">{mockUsers.length}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">系统版本</p>
-                    <p className="text-2xl font-black text-slate-800">v1.2.0</p>
-                  </div>
                 </div>
               </div>
             </div>
