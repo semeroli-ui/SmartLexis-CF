@@ -6,7 +6,24 @@ export async function onRequestPost(context) {
     const formData = await request.formData();
     const title = formData.get('title');
     const studentId = formData.get('studentId');
+    const teacherId = formData.get('teacherId'); // 新增
     const images = formData.getAll('images');
+
+    if (!teacherId) {
+      return new Response(JSON.stringify({ error: "Missing teacherId" }), { status: 400 });
+    }
+
+    // 确保表存在
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS writing_records (
+        id TEXT PRIMARY KEY,
+        studentId TEXT,
+        teacherId TEXT,
+        title TEXT,
+        analysis TEXT,
+        date DATETIME
+      )
+    `).run();
 
     // 处理多个 API Key
     const keys = env.GEMINI_API_KEY.split(',').map(k => k.trim());
@@ -45,8 +62,8 @@ export async function onRequestPost(context) {
 
     // 保存到 D1 数据库
     await env.DB.prepare(
-      "INSERT INTO writing_records (id, studentId, title, analysis, date) VALUES (?, ?, ?, ?, ?)"
-    ).bind(id, studentId, title, analysis, date).run();
+      "INSERT INTO writing_records (id, studentId, teacherId, title, analysis, date) VALUES (?, ?, ?, ?, ?, ?)"
+    ).bind(id, studentId, teacherId, title, analysis, date).run();
 
     return new Response(JSON.stringify({ id, title, analysis, date }), {
       headers: { "Content-Type": "application/json" },
