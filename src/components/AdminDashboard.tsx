@@ -16,14 +16,43 @@ interface AdminDashboardProps {
 }
 
 export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'users' | 'data'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'students' | 'data'>('users');
   const [mockUsers, setMockUsers] = useState<any[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     loadData();
+    loadStudents();
   }, []);
+
+  const loadStudents = async () => {
+    try {
+      const res = await fetch('/api/students?is_admin=true');
+      if (res.ok) {
+        const data = await res.json();
+        setStudents(data);
+      }
+    } catch (err) {
+      console.error("Load students error:", err);
+    }
+  };
+
+  const deleteStudent = async (id: number) => {
+    if (window.confirm('确定要删除该学生成绩吗？')) {
+      try {
+        const res = await fetch(`/api/students?id=${id}&is_admin=true`, { method: 'DELETE' });
+        if (res.ok) {
+          loadStudents();
+        } else {
+          alert("删除失败");
+        }
+      } catch (err) {
+        alert("网络错误");
+      }
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -100,6 +129,15 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             <Users className="w-4 h-4" /> 用户管理
           </button>
           <button 
+            onClick={() => setActiveTab('students')}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+              activeTab === 'students' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/20" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            )}
+          >
+            <FileText className="w-4 h-4" /> 学生数据
+          </button>
+          <button 
             onClick={() => setActiveTab('data')}
             className={cn(
               "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
@@ -124,14 +162,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       <div className="flex-1 flex flex-col h-screen overflow-hidden">
         <header className="h-20 bg-white border-b border-slate-200 px-8 flex items-center justify-between">
           <h2 className="text-lg font-bold text-slate-800">
-            {activeTab === 'users' ? '注册用户列表' : '系统数据维护'}
+            {activeTab === 'users' ? '注册用户列表' : activeTab === 'students' ? '全系统学生成绩' : '系统数据维护'}
           </h2>
           <div className="flex items-center gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input 
                 type="text" 
-                placeholder="搜索用户..."
+                placeholder={activeTab === 'students' ? "搜索学生..." : "搜索用户..."}
                 className="pl-10 pr-4 py-2 bg-slate-100 border-transparent rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 transition-all w-64"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -191,6 +229,45 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                     <tr>
                       <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic text-sm">
                         未找到匹配的用户
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          ) : activeTab === 'students' ? (
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">学号</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">姓名</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">总分</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">导入教师</th>
+                    <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {students.filter(s => (s.name || '').includes(searchTerm) || (s.student_id || '').includes(searchTerm)).map((s) => (
+                    <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-mono text-slate-500">{s.student_id || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-slate-700">{s.name}</td>
+                      <td className="px-6 py-4 text-sm font-black text-indigo-600">{s.total}</td>
+                      <td className="px-6 py-4 text-xs text-slate-400">{s.teacher_id || '未知'}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => deleteStudent(s.id)}
+                          className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {students.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic text-sm">
+                        暂无学生数据
                       </td>
                     </tr>
                   )}
