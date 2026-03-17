@@ -4,45 +4,51 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   try {
     const formData = await request.formData();
-    const title = formData.get("title");
-    const studentId = formData.get("studentId");
-    const images = formData.getAll("images"); // Base64 strings
+    const title = formData.get('title');
+    const studentId = formData.get('studentId');
+    const images = formData.getAll('images');
 
-    const genAI = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    // 处理多个 API Key
+    const keys = env.GEMINI_API_KEY.split(',').map(k => k.trim());
+    const apiKey = keys[Math.floor(Math.random() * keys.length)];
+    
+    const genAI = new GoogleGenAI({ apiKey });
 
     const parts = [
-      { text: `你是一位资深的语文阅卷老师。请对这篇题目为《${title}》的学生手写作文进行深度诊断。
-      请先识别图片中的文字，然后从以下维度进行分析：
-      1. 审题立意
-      2. 结构布局
-      3. 语言表达
-      4. 书写规范
-      最后给出具体的修改建议和预估分数。请以 Markdown 格式输出。` }
+      { text: `你是一位资深的语文阅卷组组长。请对这篇题目为《${title}》的学生手写作文进行深度诊断。
+      要求：
+      1. 识别图片中的文字内容（如果清晰）。
+      2. 从“立意深度”、“结构安排”、“语言表达”、“卷面书写”四个维度进行评分（满分50）。
+      3. 给出具体的“升格建议”（即如何修改能拿到更高分）。
+      请使用 Markdown 格式输出。` }
     ];
 
     for (const imgBase64 of images) {
-      const base64Data = imgBase64.split(",")[1];
+      const base64Data = imgBase64.split(',')[1];
+      const mimeType = imgBase64.split(',')[0].split(':')[1].split(';')[0];
       parts.push({
         inlineData: {
           data: base64Data,
-          mimeType: "image/jpeg"
+          mimeType: mimeType
         }
       });
     }
 
-    const result = await model.generateContent({ contents: [{ role: "user", parts }] });
-    const response = await result.response;
-    const text = response.text();
+    const response = await genAI.models.generateContent({
+      model: "gemini-3.1-flash-image-preview",
+      contents: { parts },
+    });
 
-    // Save to D1
+    const analysis = response.text;
     const id = crypto.randomUUID();
     const date = new Date().toISOString();
+
+    // 保存到 D1 数据库
     await env.DB.prepare(
       "INSERT INTO writing_records (id, studentId, title, analysis, date) VALUES (?, ?, ?, ?, ?)"
-    ).bind(id, studentId, title, text, date).run();
+    ).bind(id, studentId, title, analysis, date).run();
 
-    return new Response(JSON.stringify({ id, title, analysis: text, date }), {
+    return new Response(JSON.stringify({ id, title, analysis, date }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
