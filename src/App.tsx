@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -295,21 +296,30 @@ export default function App() {
     }
 
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead })
+      // 直接在前端调用 Gemini API，解决后端连接超时问题
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ 
+          parts: [{ 
+            text: `请用专业播音员的语气朗读以下范文：\n\n${textToRead}` 
+          }] 
+        }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
       });
-      
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'TTS 请求失败');
-      }
 
-      const data = await res.json();
-      if (data.audio) {
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
+      if (base64Audio) {
         // Gemini TTS 返回的是原始 PCM 数据，浏览器无法直接播放，需要包装 WAV 头
-        const binaryString = window.atob(data.audio);
+        const binaryString = window.atob(base64Audio);
         const len = binaryString.length;
         const buffer = new ArrayBuffer(44 + len);
         const view = new DataView(buffer);
@@ -363,6 +373,8 @@ export default function App() {
           URL.revokeObjectURL(url); 
         };
         await audio.play();
+      } else {
+        throw new Error("未能生成音频数据");
       }
     } catch (err: any) { 
       console.error("TTS Error:", err); 
