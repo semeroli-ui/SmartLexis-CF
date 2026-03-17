@@ -286,11 +286,23 @@ export default function App() {
 
   const preGenerateTTS = async (text: string) => {
     let textToRead = text;
-    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|【|$)/);
-    if (match && match[1]) {
-      textToRead = match[1].trim();
-    } else {
-      textToRead = text.substring(0, 600);
+    const patterns = [
+      /【升格范文】([\s\S]*?)(?=【亮点解析】|【亮点赏析】|【|$)/,
+      /(?:^|\n)升格范文(?:$|\n)([\s\S]*?)(?=(?:^|\n)亮点解析|$)/m,
+      /范文正文([\s\S]*?)(?=亮点解析|解析|【|$)/
+    ];
+
+    let found = false;
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1] && match[1].trim().length > 10) {
+        textToRead = match[1].trim();
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      textToRead = text.length > 200 ? text.substring(150, 750) : text;
     }
     
     try {
@@ -392,12 +404,26 @@ export default function App() {
 
     setIsTTSLoading(true);
     let textToRead = text;
-    // 尝试提取范文正文
-    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|【|$)/);
-    if (match && match[1]) {
-      textToRead = match[1].trim();
-    } else {
-      textToRead = text.substring(0, 600);
+    // 更加精准的提取逻辑：优先匹配带括号的标题，或者独立行
+    const patterns = [
+      /【升格范文】([\s\S]*?)(?=【亮点解析】|【亮点赏析】|【|$)/,
+      /(?:^|\n)升格范文(?:$|\n)([\s\S]*?)(?=(?:^|\n)亮点解析|$)/m,
+      /范文正文([\s\S]*?)(?=亮点解析|解析|【|$)/
+    ];
+
+    let found = false;
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1] && match[1].trim().length > 10) {
+        textToRead = match[1].trim();
+        found = true;
+        break;
+      }
+    }
+
+    // 如果没找到明显的范文标识，则跳过可能的导语（约前150字），取后面的核心内容
+    if (!found) {
+      textToRead = text.length > 200 ? text.substring(150, 750) : text;
     }
 
     try {
