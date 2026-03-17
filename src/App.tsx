@@ -133,8 +133,15 @@ export default function App() {
         .then(data => {
           if (Array.isArray(data)) {
             setStudents(data.map(s => ({
-              id: s.studentId || s.uid, name: s.name,
-              choice: 25, modernReading: 20, classicReading: 15, nonLinear: 8, dictation: 8, composition: 40, total: 116
+              id: s.student_id || s.id, 
+              name: s.name,
+              choice: s.choice || 0, 
+              modernReading: s.modern_reading || 0, 
+              classicReading: s.classic_reading || 0, 
+              nonLinear: s.non_linear || 0, 
+              dictation: s.dictation || 0, 
+              composition: s.composition || 0, 
+              total: s.total || 0
             })));
           }
         }).catch(() => setStudents([]));
@@ -158,21 +165,49 @@ export default function App() {
     setView('teacher');
   };
 
-  const handleSaveStudent = (student: Student) => {
-    setStudents(prev => {
-      const exists = prev.find(s => s.id === student.id);
-      if (exists) {
-        return prev.map(s => s.id === student.id ? student : s);
+  const handleSaveStudent = async (student: Student) => {
+    try {
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([student])
+      });
+      if (res.ok) {
+        setStudents(prev => {
+          const exists = prev.find(s => s.id === student.id);
+          if (exists) {
+            return prev.map(s => s.id === student.id ? student : s);
+          }
+          return [...prev, student];
+        });
+        setIsEditModalOpen(false);
+        setEditingStudent(null);
+      } else {
+        alert("保存失败，请重试");
       }
-      return [...prev, student];
-    });
-    setIsEditModalOpen(false);
-    setEditingStudent(null);
+    } catch (err) {
+      console.error(err);
+      alert("网络错误，保存失败");
+    }
   };
 
-  const handleDeleteStudent = (id: string) => {
+  const handleDeleteStudent = async (id: string) => {
     if (window.confirm('确定要删除该学生成绩吗？此操作不可撤销。')) {
-      setStudents(prev => prev.filter(s => s.id !== id));
+      try {
+        const res = await fetch('/api/students', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        if (res.ok) {
+          setStudents(prev => prev.filter(s => s.id !== id));
+        } else {
+          alert("删除失败");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("网络错误，删除失败");
+      }
     }
   };
 
@@ -258,6 +293,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToRead })
       });
+      
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'TTS 请求失败');
+      }
+
       const data = await res.json();
       if (data.audio) {
         // Gemini TTS 返回的是原始 PCM 数据，浏览器无法直接播放，需要包装 WAV 头
@@ -303,10 +344,23 @@ export default function App() {
         const audio = new Audio(url);
         audioRef.current = audio;
         audio.onplay = () => setIsPlayingAudio(true);
-        audio.onended = () => { setIsPlayingAudio(false); audioRef.current = null; URL.revokeObjectURL(url); };
-        audio.play();
+        audio.onerror = (e) => {
+          console.error("Audio playback error:", e);
+          setIsPlayingAudio(false);
+          setIsTTSLoading(false);
+          alert("音频播放失败，请重试");
+        };
+        audio.onended = () => { 
+          setIsPlayingAudio(false); 
+          audioRef.current = null; 
+          URL.revokeObjectURL(url); 
+        };
+        await audio.play();
       }
-    } catch (err) { console.error(err); }
+    } catch (err: any) { 
+      console.error("TTS Error:", err); 
+      alert(`播放失败: ${err.message}`);
+    }
     finally { setIsTTSLoading(false); }
   };
 
@@ -366,8 +420,19 @@ export default function App() {
         }).filter(Boolean) as Student[];
         
         if (newStudents.length > 0) {
-          setStudents(prev => [...prev, ...newStudents]);
-          alert(`成功导入 ${newStudents.length} 名学生成绩！`);
+          // 保存到数据库
+          fetch('/api/students', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newStudents)
+          }).then(res => {
+            if (res.ok) {
+              setStudents(prev => [...prev, ...newStudents]);
+              alert(`成功导入并保存 ${newStudents.length} 名学生成绩！`);
+            } else {
+              alert("导入成功但保存到数据库失败，请检查网络。");
+            }
+          });
         } else {
           alert("未发现有效数据，请检查模板格式。");
         }
