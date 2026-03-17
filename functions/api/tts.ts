@@ -22,7 +22,7 @@ export async function onRequestPost(context) {
     // 我们将指令精简并放入 contents 中。
     const response = await genAI.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: `请准确、专业地朗读：\n\n${text}` }] }],
+      contents: [{ parts: [{ text: `请作为一名专业的播音员，准确、自然地朗读以下文字。特别注意多音字在上下文中的正确发音，保持语速适中：\n\n${text}` }] }],
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
