@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -108,6 +107,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [isTTSLoading, setIsTTSLoading] = useState(false);
+  const [preGeneratedAudio, setPreGeneratedAudio] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -251,6 +251,7 @@ export default function App() {
     if (!essayAnalysis) return;
     setIsActionLoading(true);
     setActiveAction('essay');
+    setPreGeneratedAudio(null);
     try {
       const res = await fetch('/api/upgrade_essay', {
         method: 'POST',
@@ -259,6 +260,11 @@ export default function App() {
       });
       const data = await res.json();
       setActionContent(data.text);
+      
+      // 立即触发后台语音预生成
+      if (data.text) {
+        preGenerateTTS(data.text);
+      }
     } catch (err) { console.error(err); }
     finally { setIsActionLoading(false); }
   };
@@ -278,107 +284,147 @@ export default function App() {
     finally { setIsActionLoading(false); }
   };
 
+  const preGenerateTTS = async (text: string) => {
+    let textToRead = text;
+    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|【|$)/);
+    if (match && match[1]) {
+      textToRead = match[1].trim();
+    } else {
+      textToRead = text.substring(0, 1000);
+    }
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒延时
+      
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio) {
+          setPreGeneratedAudio(data.audio);
+        }
+      }
+    } catch (err) {
+      console.error("语音预生成失败:", err);
+    }
+  };
+
+  const playAudioFromBase64 = (base64: string) => {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const buffer = new ArrayBuffer(44 + len);
+    const view = new DataView(buffer);
+    const sampleRate = 24000;
+
+    // RIFF identifier
+    view.setUint32(0, 0x52494646, false);
+    // file length
+    view.setUint32(4, 36 + len, true);
+    // RIFF type
+    view.setUint32(8, 0x57415645, false);
+    // format chunk identifier
+    view.setUint32(12, 0x666d7420, false);
+    // format chunk length
+    view.setUint32(16, 16, true);
+    // sample format (raw PCM)
+    view.setUint16(20, 1, true);
+    // channel count (1 for mono)
+    view.setUint16(22, 1, true);
+    // sample rate
+    view.setUint32(24, sampleRate, true);
+    // byte rate (sample rate * block align)
+    view.setUint32(28, sampleRate * 2, true);
+    // block align (channel count * bytes per sample)
+    view.setUint16(32, 2, true);
+    // bits per sample
+    view.setUint16(34, 16, true);
+    // data chunk identifier
+    view.setUint32(36, 0x64617461, false);
+    // data chunk length
+    view.setUint32(40, len, true);
+
+    for (let i = 0; i < len; i++) {
+      view.setUint8(44 + i, binaryString.charCodeAt(i));
+    }
+
+    const blob = new Blob([buffer], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.onplay = () => setIsPlayingAudio(true);
+    audio.onerror = (e) => {
+      console.error("Audio playback error:", e);
+      setIsPlayingAudio(false);
+      setIsTTSLoading(false);
+      alert("音频播放失败，请重试");
+    };
+    audio.onended = () => { 
+      setIsPlayingAudio(false); 
+      audioRef.current = null; 
+      URL.revokeObjectURL(url); 
+    };
+    audio.play().catch(err => {
+      console.error("Play error:", err);
+      setIsPlayingAudio(false);
+      setIsTTSLoading(false);
+    });
+  };
+
   const playTTS = async (text: string) => {
     if (isPlayingAudio) {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setIsPlayingAudio(false);
       return;
     }
+
+    if (preGeneratedAudio) {
+      playAudioFromBase64(preGeneratedAudio);
+      return;
+    }
+
     setIsTTSLoading(true);
     let textToRead = text;
-    // 尝试提取范文正文，避免朗读冗长的诊断报告导致超时
+    // 尝试提取范文正文
     const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|【|$)/);
     if (match && match[1]) {
       textToRead = match[1].trim();
     } else {
-      // 如果提取失败，限制长度，防止请求过大导致超时
-      textToRead = text.substring(0, 500);
+      textToRead = text.substring(0, 1000);
     }
 
     try {
-      // 直接在前端调用 Gemini API，解决后端连接超时问题
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ 
-          parts: [{ 
-            text: `请用专业播音员的语气朗读以下范文：\n\n${textToRead}` 
-          }] 
-        }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒延时
       
-      if (base64Audio) {
-        // Gemini TTS 返回的是原始 PCM 数据，浏览器无法直接播放，需要包装 WAV 头
-        const binaryString = window.atob(base64Audio);
-        const len = binaryString.length;
-        const buffer = new ArrayBuffer(44 + len);
-        const view = new DataView(buffer);
-        const sampleRate = 24000;
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: '请求失败' }));
+        throw new Error(errData.error || 'TTS 请求失败');
+      }
 
-        // RIFF identifier
-        view.setUint32(0, 0x52494646, false);
-        // file length
-        view.setUint32(4, 36 + len, true);
-        // RIFF type
-        view.setUint32(8, 0x57415645, false);
-        // format chunk identifier
-        view.setUint32(12, 0x666d7420, false);
-        // format chunk length
-        view.setUint32(16, 16, true);
-        // sample format (raw PCM)
-        view.setUint16(20, 1, true);
-        // channel count (1 for mono)
-        view.setUint16(22, 1, true);
-        // sample rate
-        view.setUint32(24, sampleRate, true);
-        // byte rate (sample rate * block align)
-        view.setUint32(28, sampleRate * 2, true);
-        // block align (channel count * bytes per sample)
-        view.setUint16(32, 2, true);
-        // bits per sample
-        view.setUint16(34, 16, true);
-        // data chunk identifier
-        view.setUint32(36, 0x64617461, false);
-        // data chunk length
-        view.setUint32(40, len, true);
-
-        for (let i = 0; i < len; i++) {
-          view.setUint8(44 + i, binaryString.charCodeAt(i));
-        }
-
-        const blob = new Blob([buffer], { type: 'audio/wav' });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onplay = () => setIsPlayingAudio(true);
-        audio.onerror = (e) => {
-          console.error("Audio playback error:", e);
-          setIsPlayingAudio(false);
-          setIsTTSLoading(false);
-          alert("音频播放失败，请重试");
-        };
-        audio.onended = () => { 
-          setIsPlayingAudio(false); 
-          audioRef.current = null; 
-          URL.revokeObjectURL(url); 
-        };
-        await audio.play();
+      const data = await res.json();
+      if (data.audio) {
+        playAudioFromBase64(data.audio);
       } else {
         throw new Error("未能生成音频数据");
       }
     } catch (err: any) { 
       console.error("TTS Error:", err); 
-      alert(`播放失败: ${err.message}`);
+      alert(`播放失败: ${err.message === 'The user aborted a request.' ? '请求超时，请重试' : err.message}`);
     }
     finally { setIsTTSLoading(false); }
   };
