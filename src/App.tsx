@@ -121,7 +121,7 @@ export default function App() {
           setView('student');
           const sid = userData.studentId || userData.uid;
           setSelectedStudentId(sid);
-          fetchAnalysisHistory(sid);
+          fetchAnalysisHistory(sid, userData.uid);
         } else if (userData.role === 'admin') setView('admin');
       } catch (e) { localStorage.removeItem('lexis_user'); }
     }
@@ -151,10 +151,18 @@ export default function App() {
     }
   }, [user]);
 
-  const fetchAnalysisHistory = async (studentId: string) => {
+  useEffect(() => {
+    if (selectedStudentId && user?.uid) {
+      fetchAnalysisHistory(selectedStudentId);
+    }
+  }, [selectedStudentId, user]);
+
+  const fetchAnalysisHistory = async (studentId: string, teacherId?: string) => {
     if (!studentId) return;
+    const tId = teacherId || user?.uid;
+    if (!tId) return;
     try {
-      const res = await fetch(`/api/history?studentId=${studentId}&teacherId=${user?.uid}`);
+      const res = await fetch(`/api/history?studentId=${studentId}&teacherId=${tId}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) setAnalysisHistory(data);
@@ -625,7 +633,7 @@ export default function App() {
       setView('student');
       const sid = userData.studentId || userData.uid;
       setSelectedStudentId(sid);
-      fetchAnalysisHistory(sid);
+      fetchAnalysisHistory(sid, userData.uid);
     } else if (userData.role === 'admin') setView('admin');
     else setView('teacher');
   }} />;
@@ -702,7 +710,7 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <Card title="分数段分布" subtitle="全班成绩正态分布" className="lg:col-span-2" delay={0.5}>
                   <div className="h-[360px] mt-6">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <BarChart data={[{ range: '130+', count: 4 }, { range: '120-130', count: 12 }, { range: '110-120', count: 18 }, { range: '100-110', count: 15 }, { range: '90-100', count: 6 }, { range: '<90', count: 5 }]}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 600}} />
@@ -927,7 +935,7 @@ export default function App() {
                 {/* Radar Chart */}
                 <Card className="md:col-span-1 lg:col-span-2" title="核心素养维度" subtitle="基于 6 大题型加权计算" delay={0.4}>
                   <div className="h-[400px] mt-6 w-full">
-                    <ResponsiveContainer width="100%" height="100%" minHeight={300}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({ ...d, avg: [82, 75, 78, 70, 72][i] }))}>
                         <PolarGrid stroke="#e2e8f0" />
                         <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 800 }} />
@@ -991,7 +999,7 @@ export default function App() {
                 ) : activeAction === 'graph' ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
                     <div className="h-[450px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent)}>
                           <PolarGrid stroke="#e2e8f0" />
                           <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 14, fontWeight: 800 }} />
