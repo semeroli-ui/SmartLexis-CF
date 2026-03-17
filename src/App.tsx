@@ -96,7 +96,6 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrescription, setAiPrescription] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<'practice' | 'essay' | 'graph' | null>(null);
-  const [isActionLoading, setIsActionLoading] = useState(false);
   const [essayTitle, setEssayTitle] = useState('');
   const [essayImages, setEssayImages] = useState<string[]>([]);
   const [isAnalyzingEssay, setIsAnalyzingEssay] = useState(false);
@@ -104,19 +103,23 @@ export default function App() {
   const [analysisHistory, setAnalysisHistory] = useState<WritingRecord[]>([]);
   const [authLoading, setAuthLoading] = useState(true);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('lexis_user');
     if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      setUser(userData);
-      if (userData.role === 'student') {
-        setView('student');
-        setSelectedStudentId(userData.studentId || userData.uid);
-        fetchAnalysisHistory(userData.studentId || userData.uid);
-      } else if (userData.role === 'admin') {
-        setView('admin');
+      try {
+        const userData = JSON.parse(savedUser);
+        setUser(userData);
+        if (userData.role === 'student') {
+          setView('student');
+          const sid = userData.studentId || userData.uid;
+          setSelectedStudentId(sid);
+          fetchAnalysisHistory(sid);
+        } else if (userData.role === 'admin') {
+          setView('admin');
+        }
+      } catch (e) {
+        localStorage.removeItem('lexis_user');
       }
     }
     setAuthLoading(false);
@@ -125,34 +128,28 @@ export default function App() {
   useEffect(() => {
     if (user?.role === 'teacher') {
       fetch('/api/students')
-        .then(res => res.json())
+        .then(res => res.ok ? res.json() : [])
         .then(data => {
           if (Array.isArray(data)) {
             const studentsWithScores = data.map(s => ({
               id: s.studentId || s.uid,
               name: s.name,
-              choice: Math.floor(Math.random() * 5) + 25,
-              modernReading: Math.floor(Math.random() * 5) + 20,
-              classicReading: Math.floor(Math.random() * 5) + 12,
-              nonLinear: Math.floor(Math.random() * 3) + 7,
-              dictation: Math.floor(Math.random() * 2) + 8,
-              composition: Math.floor(Math.random() * 10) + 35,
-              total: 0
-            })).map(s => ({
-              ...s,
-              total: s.choice + s.modernReading + s.classicReading + s.nonLinear + s.dictation + s.composition
+              choice: 25, modernReading: 20, classicReading: 15, nonLinear: 8, dictation: 8, composition: 40, total: 116
             }));
             setStudents(studentsWithScores);
           }
-        });
+        }).catch(() => setStudents([]));
     }
   }, [user]);
 
   const fetchAnalysisHistory = async (studentId: string) => {
+    if (!studentId) return;
     try {
       const res = await fetch(`/api/history?studentId=${studentId}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setAnalysisHistory(data);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setAnalysisHistory(data);
+      }
     } catch (err) { console.error(err); }
   };
 
@@ -177,8 +174,8 @@ export default function App() {
         body: JSON.stringify({ student })
       });
       const data = await res.json();
-      setAiPrescription(data.analysis);
-    } catch (err) { console.error(err); }
+      setAiPrescription(data.analysis || data.error || "分析失败");
+    } catch (err) { setAiPrescription("网络错误，请检查 Cloudflare 配置"); }
     finally { setIsGenerating(false); }
   };
 
@@ -192,9 +189,15 @@ export default function App() {
       essayImages.forEach(img => formData.append('images', img));
       const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
       const data = await res.json();
-      setEssayAnalysis(data);
-      setAnalysisHistory(prev => [data, ...prev]);
-    } catch (err) { console.error(err); }
+      if (res.ok) {
+        setEssayAnalysis(data);
+        setAnalysisHistory(prev => [data, ...prev]);
+        setEssayImages([]);
+        setEssayTitle('');
+      } else {
+        alert(data.error || "阅卷失败");
+      }
+    } catch (err) { alert("网络错误"); }
     finally { setIsAnalyzingEssay(false); }
   };
 
@@ -204,7 +207,7 @@ export default function App() {
       setIsPlayingAudio(false);
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(text.replace(/[#*`>]/g, ''));
     utterance.lang = 'zh-CN';
     utterance.onstart = () => setIsPlayingAudio(true);
     utterance.onend = () => setIsPlayingAudio(false);
@@ -216,8 +219,8 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const rows = (event.target?.result as string).split('\n').slice(1);
-      const newStudents = rows.map(row => {
+      const text = (event.target?.result as string).split('\n').slice(1);
+      const newStudents = text.map(row => {
         const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.split(',');
         if (!id || !name) return null;
         const s = { id, name, choice: parseInt(choice) || 0, modernReading: parseInt(modern) || 0, classicReading: parseInt(classic) || 0, nonLinear: parseInt(nonLinear) || 0, dictation: parseInt(dictation) || 0, composition: parseInt(composition) || 0, total: 0 };
@@ -248,11 +251,11 @@ export default function App() {
   };
 
   const getLiteracyData = (s: Student) => [
-    { subject: '语言建构', value: Math.round(((s.choice + s.dictation) / 40) * 100) },
-    { subject: '思维发展', value: Math.round(((s.modernReading + s.nonLinear) / 40) * 100) },
-    { subject: '审美鉴赏', value: Math.round((s.composition / 50) * 100) },
-    { subject: '文化传承', value: Math.round((s.classicReading / 20) * 100) },
-    { subject: '表达创作', value: Math.round(((s.composition + s.modernReading) / 80) * 100) },
+    { subject: '语言建构', value: Math.round(((s.choice + s.dictation) / 40) * 100) || 0 },
+    { subject: '思维发展', value: Math.round(((s.modernReading + s.nonLinear) / 40) * 100) || 0 },
+    { subject: '审美鉴赏', value: Math.round((s.composition / 50) * 100) || 0 },
+    { subject: '文化传承', value: Math.round((s.classicReading / 20) * 100) || 0 },
+    { subject: '表达创作', value: Math.round(((s.composition + s.modernReading) / 80) * 100) || 0 },
   ];
 
   const filteredStudents = students.filter(s => s.name.includes(searchTerm) || s.id.includes(searchTerm));
@@ -269,8 +272,9 @@ export default function App() {
     localStorage.setItem('lexis_user', JSON.stringify(userData));
     if (userData.role === 'student') {
       setView('student');
-      setSelectedStudentId(userData.studentId || userData.uid);
-      fetchAnalysisHistory(userData.studentId || userData.uid);
+      const sid = userData.studentId || userData.uid;
+      setSelectedStudentId(sid);
+      fetchAnalysisHistory(sid);
     } else if (userData.role === 'admin') setView('admin');
     else setView('teacher');
   }} />;
@@ -579,7 +583,7 @@ export default function App() {
                           <span className={cn("text-base font-black", essayAnalysis?.id === item.id ? "text-indigo-600" : "text-slate-700")}>{item.title}</span>
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{new Date(item.date).toLocaleDateString()}</span>
                         </div>
-                        <p className="text-xs text-slate-400 line-clamp-1 font-bold leading-relaxed">{item.analysis.substring(0, 120)}...</p>
+                        <p className="text-xs text-slate-400 line-clamp-1 font-bold leading-relaxed">{(item.analysis || "").substring(0, 120)}...</p>
                       </button>
                     )) : (
                       <div className="py-24 text-center opacity-30">
