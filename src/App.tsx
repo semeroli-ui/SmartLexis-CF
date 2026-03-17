@@ -260,10 +260,50 @@ export default function App() {
       });
       const data = await res.json();
       if (data.audio) {
-        const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
+        // Gemini TTS 返回的是原始 PCM 数据，浏览器无法直接播放，需要包装 WAV 头
+        const binaryString = window.atob(data.audio);
+        const len = binaryString.length;
+        const buffer = new ArrayBuffer(44 + len);
+        const view = new DataView(buffer);
+        const sampleRate = 24000;
+
+        // RIFF identifier
+        view.setUint32(0, 0x52494646, false);
+        // file length
+        view.setUint32(4, 36 + len, true);
+        // RIFF type
+        view.setUint32(8, 0x57415645, false);
+        // format chunk identifier
+        view.setUint32(12, 0x666d7420, false);
+        // format chunk length
+        view.setUint32(16, 16, true);
+        // sample format (raw PCM)
+        view.setUint16(20, 1, true);
+        // channel count (1 for mono)
+        view.setUint16(22, 1, true);
+        // sample rate
+        view.setUint32(24, sampleRate, true);
+        // byte rate (sample rate * block align)
+        view.setUint32(28, sampleRate * 2, true);
+        // block align (channel count * bytes per sample)
+        view.setUint16(32, 2, true);
+        // bits per sample
+        view.setUint16(34, 16, true);
+        // data chunk identifier
+        view.setUint32(36, 0x64617461, false);
+        // data chunk length
+        view.setUint32(40, len, true);
+
+        for (let i = 0; i < len; i++) {
+          view.setUint8(44 + i, binaryString.charCodeAt(i));
+        }
+
+        const blob = new Blob([buffer], { type: 'audio/wav' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
         audioRef.current = audio;
         audio.onplay = () => setIsPlayingAudio(true);
-        audio.onended = () => { setIsPlayingAudio(false); audioRef.current = null; };
+        audio.onended = () => { setIsPlayingAudio(false); audioRef.current = null; URL.revokeObjectURL(url); };
         audio.play();
       }
     } catch (err) { console.error(err); }
