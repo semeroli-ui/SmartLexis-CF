@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import * as XLSX from 'xlsx';
 import { cn } from './lib/utils';
 import Auth from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
@@ -258,32 +259,43 @@ export default function App() {
   };
 
   const downloadTemplate = () => {
-    // 定义表头
-    const headers = "学号,姓名,选择题,现代文阅读,文言文阅读,非连续性文本,默写填空,作文";
-    const exampleData = "2026001,张三,25,20,15,8,8,42";
-    const csvContent = `\uFEFF${headers}\n${exampleData}`; // 添加 BOM 防止 Excel 乱码
+    const data = [
+      ["学号", "姓名", "选择题", "现代文阅读", "文言文阅读", "非连续性文本", "默写填空", "作文"],
+      ["2026001", "张三", 25, 20, 15, 8, 8, 42],
+      ["2026002", "李四", 22, 18, 12, 7, 9, 38]
+    ];
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", "智语系统_成绩导入模板.csv");
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "成绩模板");
+    
+    // 导出为 .xlsx 文件，这是现代 Excel 的标准格式
+    XLSX.writeFile(wb, "智语系统_成绩导入模板.xlsx");
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const text = (event.target?.result as string).split('\n').slice(1);
-        const newStudents = text.map(row => {
-          if (!row.trim()) return null;
-          const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.split(',').map(v => v.trim());
+        const data = new Uint8Array(event.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        // 获取第一个工作表
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        
+        // 转换为 JSON 对象数组
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        
+        // 过滤掉表头和空行
+        const rows = jsonData.slice(1);
+        const newStudents = rows.map(row => {
+          if (!row || row.length < 2) return null;
+          
+          const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.map(v => v?.toString().trim());
           if (!id || !name) return null;
           
           const s = { 
@@ -308,11 +320,11 @@ export default function App() {
           alert("未发现有效数据，请检查模板格式。");
         }
       } catch (err) {
-        alert("文件解析失败，请确保使用标准的 CSV 模板。");
+        console.error("Import error:", err);
+        alert("文件解析失败，请确保使用标准的 Excel 或 CSV 模板。");
       }
     };
-    reader.readAsText(file);
-    // 清空 input 方便下次选择同一文件
+    reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
@@ -392,7 +404,7 @@ export default function App() {
               </button>
               <label className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
                 <Upload className="w-5 h-5" /> 成绩导入
-                <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
+                <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
               </label>
             </>
           )}
