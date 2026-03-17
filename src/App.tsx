@@ -5,7 +5,7 @@ import {
   Search, Filter, Download, Upload, LogOut, 
   ChevronRight, BrainCircuit, Target, FileText,
   Loader2, ImageIcon, History, Square, ArrowRight,
-  BarChart3, Activity
+  BarChart3, Activity, Volume2
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -96,6 +96,8 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiPrescription, setAiPrescription] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<'practice' | 'essay' | 'graph' | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [actionContent, setActionContent] = useState<string | null>(null);
   const [essayTitle, setEssayTitle] = useState('');
   const [essayImages, setEssayImages] = useState<string[]>([]);
   const [isAnalyzingEssay, setIsAnalyzingEssay] = useState(false);
@@ -103,6 +105,8 @@ export default function App() {
   const [analysisHistory, setAnalysisHistory] = useState<WritingRecord[]>([]);
   const [authLoading, setAuthLoading] = useState(true);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [isTTSLoading, setIsTTSLoading] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('lexis_user');
@@ -115,12 +119,8 @@ export default function App() {
           const sid = userData.studentId || userData.uid;
           setSelectedStudentId(sid);
           fetchAnalysisHistory(sid);
-        } else if (userData.role === 'admin') {
-          setView('admin');
-        }
-      } catch (e) {
-        localStorage.removeItem('lexis_user');
-      }
+        } else if (userData.role === 'admin') setView('admin');
+      } catch (e) { localStorage.removeItem('lexis_user'); }
     }
     setAuthLoading(false);
   }, []);
@@ -131,12 +131,10 @@ export default function App() {
         .then(res => res.ok ? res.json() : [])
         .then(data => {
           if (Array.isArray(data)) {
-            const studentsWithScores = data.map(s => ({
-              id: s.studentId || s.uid,
-              name: s.name,
+            setStudents(data.map(s => ({
+              id: s.studentId || s.uid, name: s.name,
               choice: 25, modernReading: 20, classicReading: 15, nonLinear: 8, dictation: 8, composition: 40, total: 116
-            }));
-            setStudents(studentsWithScores);
+            })));
           }
         }).catch(() => setStudents([]));
     }
@@ -174,8 +172,8 @@ export default function App() {
         body: JSON.stringify({ student })
       });
       const data = await res.json();
-      setAiPrescription(data.analysis || data.error || "分析失败");
-    } catch (err) { setAiPrescription("网络错误，请检查 Cloudflare 配置"); }
+      setAiPrescription(data.analysis || "分析失败");
+    } catch (err) { setAiPrescription("网络错误"); }
     finally { setIsGenerating(false); }
   };
 
@@ -194,24 +192,69 @@ export default function App() {
         setAnalysisHistory(prev => [data, ...prev]);
         setEssayImages([]);
         setEssayTitle('');
-      } else {
-        alert(data.error || "阅卷失败");
-      }
+      } else alert(data.error || "阅卷失败");
     } catch (err) { alert("网络错误"); }
     finally { setIsAnalyzingEssay(false); }
   };
 
+  const fetchUpgradedEssay = async () => {
+    if (!essayAnalysis) return;
+    setIsActionLoading(true);
+    setActiveAction('essay');
+    try {
+      const res = await fetch('/api/upgrade_essay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: essayAnalysis.title, content: essayAnalysis.analysis })
+      });
+      const data = await res.json();
+      setActionContent(data.text);
+    } catch (err) { console.error(err); }
+    finally { setIsActionLoading(false); }
+  };
+
+  const fetchPractice = async () => {
+    setIsActionLoading(true);
+    setActiveAction('practice');
+    try {
+      const res = await fetch('/api/generate_practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student: selectedStudent })
+      });
+      const data = await res.json();
+      setActionContent(data.text);
+    } catch (err) { console.error(err); }
+    finally { setIsActionLoading(false); }
+  };
+
   const playTTS = async (text: string) => {
     if (isPlayingAudio) {
-      window.speechSynthesis.cancel();
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setIsPlayingAudio(false);
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text.replace(/[#*`>]/g, ''));
-    utterance.lang = 'zh-CN';
-    utterance.onstart = () => setIsPlayingAudio(true);
-    utterance.onend = () => setIsPlayingAudio(false);
-    window.speechSynthesis.speak(utterance);
+    setIsTTSLoading(true);
+    let textToRead = text;
+    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|$)/);
+    if (match && match[1]) textToRead = match[1].trim();
+
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead })
+      });
+      const data = await res.json();
+      if (data.audio) {
+        const audio = new Audio(`data:audio/wav;base64,${data.audio}`);
+        audioRef.current = audio;
+        audio.onplay = () => setIsPlayingAudio(true);
+        audio.onended = () => { setIsPlayingAudio(false); audioRef.current = null; };
+        audio.play();
+      }
+    } catch (err) { console.error(err); }
+    finally { setIsTTSLoading(false); }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -291,7 +334,6 @@ export default function App() {
           </div>
           <span className="font-bold text-xl tracking-tight">智语·SmartLexis</span>
         </div>
-
         <nav className="space-y-3 flex-1">
           {user?.role === 'teacher' && (
             <button onClick={() => setView('teacher')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'teacher' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
@@ -301,7 +343,6 @@ export default function App() {
           <button onClick={() => setView('student')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
             <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
           </button>
-          
           {user?.role === 'teacher' && (
             <>
               <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
@@ -312,7 +353,6 @@ export default function App() {
             </>
           )}
         </nav>
-
         <div className="mt-auto p-5 bg-slate-800/50 rounded-[32px] border border-slate-700/50">
           <div className="flex items-center justify-between mb-2">
             <div>
@@ -342,14 +382,12 @@ export default function App() {
                   <button onClick={() => { setEditingStudent(null); setIsEditModalOpen(true); }} className="p-4 bg-indigo-600 text-white rounded-[24px] shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all"><Users className="w-6 h-6" /></button>
                 </div>
               </header>
-
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <StatBox label="班级平均分" value={classStats.avg} subValue="+2.4" icon={TrendingUp} colorClass="bg-indigo-50 text-indigo-600" delay={0.1} />
                 <StatBox label="及格率 (90+)" value={`${classStats.passRate}%`} subValue="↑ 5%" icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" delay={0.2} />
                 <StatBox label="优秀率 (120+)" value={`${classStats.excellentRate}%`} subValue="稳定" icon={Award} colorClass="bg-amber-50 text-amber-600" delay={0.3} />
                 <StatBox label="待关注人数" value="5" subValue="需辅导" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" delay={0.4} />
               </div>
-
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <Card title="分数段分布" subtitle="全班成绩正态分布" className="lg:col-span-2" delay={0.5}>
                   <div className="h-[360px] mt-6">
@@ -366,7 +404,6 @@ export default function App() {
                     </ResponsiveContainer>
                   </div>
                 </Card>
-
                 <Card title="题型得分率排行" subtitle="全班平均表现" delay={0.6}>
                   <div className="space-y-8 mt-6">
                     {[{ label: '选择题', val: 88, color: 'bg-emerald-500' }, { label: '默写填空', val: 82, color: 'bg-emerald-400' }, { label: '作文', val: 74, color: 'bg-indigo-500' }, { label: '现代文阅读', val: 68, color: 'bg-amber-500' }, { label: '文言文阅读', val: 52, color: 'bg-rose-500' }].map(item => (
@@ -380,7 +417,6 @@ export default function App() {
                   </div>
                 </Card>
               </div>
-
               <Card title="学生成绩明细" subtitle={`共 ${filteredStudents.length} 条记录`} delay={0.7}>
                 <div className="overflow-x-auto mt-6">
                   <table className="w-full text-left">
@@ -438,7 +474,6 @@ export default function App() {
                     </div>
                     {essayAnalysis && <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><History className="w-4 h-4" /> {new Date(essayAnalysis.date).toLocaleDateString()}</div>}
                   </div>
-
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     <div className="space-y-8">
                       <div className="space-y-6">
@@ -467,7 +502,6 @@ export default function App() {
                         {isAnalyzingEssay ? 'AI 正在深度阅卷...' : '开始深度诊断'}
                       </button>
                     </div>
-
                     <div className="bg-white rounded-[32px] border border-slate-100 p-8 min-h-[450px] flex flex-col shadow-inner overflow-hidden">
                       {isAnalyzingEssay ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center space-y-6">
@@ -510,7 +544,6 @@ export default function App() {
                         <div className="w-12 h-12 bg-indigo-100 rounded-[20px] flex items-center justify-center"><BrainCircuit className="w-6 h-6 text-indigo-600" /></div>
                         <div><h3 className="text-xl font-bold text-slate-900">AI 智能学习处方</h3><p className="text-xs text-slate-500 font-bold">基于大数据分析的个性化提升路径</p></div>
                       </div>
-
                       {!aiPrescription && !isGenerating ? (
                         <div className="py-16 text-center space-y-8">
                           <div className="w-24 h-24 bg-white rounded-[40px] flex items-center justify-center mx-auto shadow-xl border border-indigo-50"><Sparkles className="w-12 h-12 text-indigo-600" /></div>
@@ -525,7 +558,7 @@ export default function App() {
                       ) : (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[40px] border border-indigo-100 shadow-sm relative group">
                           <div className="absolute top-8 right-8 flex gap-3 no-print">
-                            <button onClick={() => playTTS(aiPrescription || '')} className={cn("p-3.5 rounded-2xl transition-all shadow-sm", isPlayingAudio ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50")}>{isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Activity className="w-5 h-5" />}</button>
+                            <button onClick={() => playTTS(aiPrescription || '')} className={cn("p-3.5 rounded-2xl transition-all shadow-sm", isPlayingAudio ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50")}>{isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Volume2 className="w-5 h-5" />}</button>
                             <button onClick={() => generateAIAnalysis(selectedStudent)} className="p-3.5 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><TrendingUp className="w-5 h-5" /></button>
                           </div>
                           <div className="prose prose-indigo max-w-none prose-p:leading-relaxed prose-headings:font-serif prose-headings:tracking-tight">
@@ -534,16 +567,15 @@ export default function App() {
                         </motion.div>
                       )}
                     </div>
-
                     <div className="w-full lg:w-80 space-y-8">
                       <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] ml-1">推荐行动路径 / Action Path</h4>
                       <div className="grid grid-cols-1 gap-5">
                         {[
-                          { id: 'practice', title: '专项提分练习', desc: '针对薄弱项的精选试题', icon: Target, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                          { id: 'essay', title: '范文升格赏析', desc: '高分作文与名家名篇', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                          { id: 'graph', title: '核心素养图谱', desc: '查看关联知识点掌握', icon: BrainCircuit, color: 'text-amber-600', bg: 'bg-amber-50' },
+                          { id: 'practice', title: '专项提分练习', desc: '针对薄弱项的精选试题', icon: Target, color: 'text-indigo-600', bg: 'bg-indigo-50', action: fetchPractice },
+                          { id: 'essay', title: '范文升格赏析', desc: '高分作文与名家名篇', icon: Award, color: 'text-emerald-600', bg: 'bg-emerald-50', action: fetchUpgradedEssay },
+                          { id: 'graph', title: '核心素养图谱', desc: '查看关联知识点掌握', icon: BrainCircuit, color: 'text-amber-600', bg: 'bg-amber-50', action: () => setActiveAction('graph') },
                         ].map(action => (
-                          <button key={action.id} onClick={() => setActiveAction(action.id as any)} className="group p-6 bg-white border border-slate-100 rounded-[32px] text-left hover:border-indigo-200 hover:shadow-2xl transition-all duration-500">
+                          <button key={action.id} onClick={action.action} className="group p-6 bg-white border border-slate-100 rounded-[32px] text-left hover:border-indigo-200 hover:shadow-2xl transition-all duration-500">
                             <div className="flex items-center justify-between mb-4">
                               <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center", action.bg)}><action.icon className={cn("w-6 h-6", action.color)} /></div>
                               <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-2 transition-all" />
@@ -613,10 +645,15 @@ export default function App() {
                   </h3>
                   <p className="text-slate-500 text-base font-bold mt-2 tracking-tight">基于 AI 诊断结果生成的个性化提升方案</p>
                 </div>
-                <button onClick={() => setActiveAction(null)} className="w-16 h-16 flex items-center justify-center bg-white border border-slate-200 rounded-[24px] hover:bg-slate-50 transition-all shadow-sm hover:rotate-90 duration-500"><AlertCircle className="w-8 h-8 text-slate-400 rotate-45" /></button>
+                <button onClick={() => { setActiveAction(null); setActionContent(null); }} className="w-16 h-16 flex items-center justify-center bg-white border border-slate-200 rounded-[24px] hover:bg-slate-50 transition-all shadow-sm hover:rotate-90 duration-500"><AlertCircle className="w-8 h-8 text-slate-400 rotate-45" /></button>
               </div>
               <div className="p-12 overflow-y-auto flex-1 custom-scrollbar">
-                {activeAction === 'graph' ? (
+                {isActionLoading ? (
+                  <div className="py-24 text-center space-y-8">
+                    <Loader2 className="w-16 h-16 text-indigo-600 animate-spin mx-auto" />
+                    <p className="text-indigo-600 font-black text-2xl animate-pulse">AI 正在为您精心准备内容...</p>
+                  </div>
+                ) : activeAction === 'graph' ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
                     <div className="h-[450px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
@@ -640,13 +677,28 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                ) : actionContent ? (
+                  <div className="relative group">
+                    {activeAction === 'essay' && (
+                      <div className="absolute top-0 right-0 no-print">
+                        <button onClick={() => playTTS(actionContent)} disabled={isTTSLoading} className={cn("p-4 rounded-2xl transition-all shadow-lg flex items-center gap-3", isPlayingAudio ? "bg-rose-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700")}>
+                          {isTTSLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Volume2 className="w-5 h-5" />}
+                          <span className="text-sm font-black">{isPlayingAudio ? '停止朗读' : '播音员朗读范文'}</span>
+                        </button>
+                      </div>
+                    )}
+                    <div className="prose prose-indigo max-w-none prose-p:leading-loose prose-headings:font-serif prose-headings:tracking-tight">
+                      <ReactMarkdown>{actionContent}</ReactMarkdown>
+                    </div>
+                  </div>
                 ) : (
-                  <div className="prose prose-indigo max-w-none prose-p:leading-loose prose-headings:font-serif">
-                    <div className="p-12 bg-slate-50 rounded-[40px] border border-slate-100 italic text-slate-400 text-center text-lg font-bold">AI 正在为您生成深度学习内容，请稍后...</div>
+                  <div className="py-24 text-center opacity-30">
+                    <FileText className="w-20 h-20 text-slate-300 mx-auto mb-4" />
+                    <p className="text-base text-slate-400 font-black">暂无内容</p>
                   </div>
                 )}
               </div>
-              <div className="p-10 border-t border-slate-100 flex justify-center"><button onClick={() => setActiveAction(null)} className="px-16 py-5 bg-slate-900 text-white rounded-[24px] font-black text-lg hover:bg-slate-800 transition-all shadow-2xl shadow-slate-200">完成学习</button></div>
+              <div className="p-10 border-t border-slate-100 flex justify-center"><button onClick={() => { setActiveAction(null); setActionContent(null); }} className="px-16 py-5 bg-slate-900 text-white rounded-[24px] font-black text-lg hover:bg-slate-800 transition-all shadow-2xl shadow-slate-200">完成学习</button></div>
             </motion.div>
           </motion.div>
         )}
@@ -678,7 +730,7 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-3 gap-6">
                   {[{ name: 'choice', label: '选择', max: 30 }, { name: 'modernReading', label: '现代文', max: 30 }, { name: 'classicReading', label: '文言文', max: 20 }, { name: 'nonLinear', label: '非连续', max: 10 }, { name: 'dictation', label: '默写', max: 10 }, { name: 'composition', label: '作文', max: 50 }].map(field => (
-                    <div key={field.name} className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{field.label}</label><input type="number" name={field.name} defaultValue={editingStudent ? (editingStudent as any)[field.name] : 0} min="0" max={field.max} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all" /></div>
+                    <div key={field.name} className="space-y-3"><label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">{field.label}</label><input type="number" name={field.name} defaultValue={editingStudent ? (editingStudent as any)[field.name] : 0} min="0" max={field.max} required className="w-full px-6 py-4 bg-slate-50 border border-slate-200 rounded-[24px] text-sm font-bold outline-none focus:ring-8 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all" /></div>
                   ))}
                 </div>
                 <div className="pt-6 flex gap-6"><button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 py-5 bg-slate-100 text-slate-600 rounded-[24px] font-black text-lg hover:bg-slate-200 transition-all">取消</button><button type="submit" className="flex-1 py-5 bg-indigo-600 text-white rounded-[24px] font-black text-lg hover:bg-indigo-700 shadow-2xl shadow-indigo-200 transition-all">保存信息</button></div>
