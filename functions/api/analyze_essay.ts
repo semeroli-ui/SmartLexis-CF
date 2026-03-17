@@ -14,7 +14,7 @@ export async function onRequestPost(context) {
     
     const genAI = new GoogleGenAI({ apiKey });
 
-    const parts = [
+    const parts: any[] = [
       { text: `你是一位资深的语文阅卷组组长。请对这篇题目为《${title}》的学生手写作文进行深度诊断。
       要求：
       1. 识别图片中的文字内容（如果清晰）。
