@@ -59,12 +59,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const deleteUser = async (uid: string) => {
     if (window.confirm(`确定要删除该用户吗？`)) {
       try {
-        const response = await fetch(`/api/admin/users/${uid}`, { method: 'DELETE' });
+        const response = await fetch(`/api/admin/users?uid=${uid}`, { method: 'DELETE' });
         if (response.ok) {
           loadData();
+        } else {
+          const err = await response.json();
+          alert(`删除失败: ${err.error || '未知错误'}`);
         }
       } catch (error) {
         console.error("Delete user error:", error);
+        alert("删除失败，请检查网络连接");
       }
     }
   };
