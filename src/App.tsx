@@ -153,6 +153,18 @@ export default function App() {
 
   useEffect(() => {
     if (selectedStudentId && user?.uid) {
+      // 切换学生时清除之前的分析报告和输入内容，确保数据隔离
+      setAiPrescription(null);
+      setActionContent(null);
+      setEssayAnalysis(null);
+      setEssayTitle('');
+      setEssayImages([]);
+      setPreGeneratedAudio(null);
+      if (isPlayingAudio && audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+        setIsPlayingAudio(false);
+      }
       fetchAnalysisHistory(selectedStudentId);
     }
   }, [selectedStudentId, user]);
