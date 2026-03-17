@@ -25,35 +25,28 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
 
     try {
       if (isLogin) {
-        // 极简逻辑：如果本地有这个邮箱，就登录；否则报错
-        const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
-        if (users[email] && users[email].password === password) {
-          onAuthSuccess(users[email]);
-        } else if (email === 'admin@lexis.com' && password === 'admin123') {
-          // 预设一个管理员账号
-          const adminUser = { uid: 'admin', email, name: '系统管理员', role: 'admin' };
-          onAuthSuccess(adminUser);
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          onAuthSuccess(data);
         } else {
-          setError('邮箱或密码错误，或用户不存在。');
+          setError(data.error || '登录失败');
         }
       } else {
-        // 注册逻辑：存入本地模拟数据库
-        const users = JSON.parse(localStorage.getItem('lexis_mock_users') || '{}');
-        if (users[email]) {
-          setError('该邮箱已注册。');
+        const response = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password, name, studentId, role })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          onAuthSuccess(data);
         } else {
-          const newUser = {
-            uid: Date.now().toString(),
-            email,
-            password, // 实际开发中绝不能明文存储
-            name,
-            studentId: role === 'student' ? studentId : undefined,
-            role,
-            createdAt: new Date().toISOString()
-          };
-          users[email] = newUser;
-          localStorage.setItem('lexis_mock_users', JSON.stringify(users));
-          onAuthSuccess(newUser);
+          setError(data.error || '注册失败');
         }
       }
     } catch (err: any) {
@@ -125,20 +118,20 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
             {!isLogin && (
               <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">姓名 / Name</label>
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-[0.15em] mb-2.5 ml-1">姓名 / Name</label>
                   <input 
                     type="text" 
                     required 
                     placeholder="请输入真实姓名"
-                    className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                    className="w-full px-5 py-3.5 bg-white/80 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-slate-900 font-bold"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">身份 / Identity</label>
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-[0.15em] mb-2.5 ml-1">身份 / Identity</label>
                   <select 
-                    className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer"
+                    className="w-full px-5 py-3.5 bg-white/80 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all appearance-none cursor-pointer text-slate-900 font-bold"
                     value={role}
                     onChange={(e) => setRole(e.target.value as any)}
                   >
@@ -148,38 +141,38 @@ export default function Auth({ onAuthSuccess }: AuthProps) {
                 </div>
                 {role === 'student' && (
                   <div className="col-span-2 animate-in fade-in slide-in-from-top-2">
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">学号 / Student ID</label>
+                    <label className="block text-xs font-black text-slate-700 uppercase tracking-[0.15em] mb-2.5 ml-1">学号 / Student ID</label>
                     <input 
                       type="text" 
                       required 
                       placeholder="请输入您的学号 (如: 2026001)"
-                      className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                      className="w-full px-5 py-3.5 bg-white/80 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-slate-900 font-bold"
                       value={studentId}
                       onChange={(e) => setStudentId(e.target.value)}
                     />
-                    <p className="mt-1.5 ml-1 text-[9px] text-slate-400">请填写老师导入成绩时使用的学号，以便查看您的诊断报告。</p>
+                    <p className="mt-2 ml-1 text-[10px] text-slate-500 font-bold leading-relaxed">请填写老师导入成绩时使用的学号，以便查看您的诊断报告。</p>
                   </div>
                 )}
               </div>
             )}
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">邮箱 / Email</label>
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-[0.15em] mb-2.5 ml-1">邮箱 / Email</label>
               <input 
                 type="email" 
                 required 
                 placeholder="example@email.com"
-                className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                className="w-full px-5 py-3.5 bg-white/80 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-slate-900 font-bold"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-2 ml-1">密码 / Password</label>
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-[0.15em] mb-2.5 ml-1">密码 / Password</label>
               <input 
                 type="password" 
                 required 
                 placeholder="••••••••"
-                className="w-full px-5 py-3.5 bg-slate-50/50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-300"
+                className="w-full px-5 py-3.5 bg-white/80 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 text-slate-900 font-bold"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
