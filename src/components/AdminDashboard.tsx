@@ -32,21 +32,27 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       const res = await fetch('/api/students?is_admin=true');
       if (res.ok) {
         const data = await res.json();
-        setStudents(data);
+        // 确保每个学生都有 id，如果没有则尝试使用 student_id 作为后备（虽然数据库应该有 id）
+        setStudents(Array.isArray(data) ? data : []);
       }
     } catch (err) {
       console.error("Load students error:", err);
     }
   };
 
-  const deleteStudent = async (id: number) => {
+  const deleteStudent = async (id: any) => {
+    if (!id || id === 'undefined') {
+      alert("无法删除：无效的记录ID");
+      return;
+    }
     if (window.confirm('确定要删除该学生成绩吗？')) {
       try {
         const res = await fetch(`/api/students?id=${id}&is_admin=true`, { method: 'DELETE' });
         if (res.ok) {
           loadStudents();
         } else {
-          alert("删除失败");
+          const errData = await res.json().catch(() => ({}));
+          alert(`删除失败: ${errData.error || '服务器错误'}`);
         }
       } catch (err) {
         alert("网络错误");
