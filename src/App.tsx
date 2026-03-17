@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -294,22 +295,30 @@ export default function App() {
     }
     
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒延时
+      // 直接在前端调用 Gemini API，解决后端连接超时和 405 错误
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead }),
-        signal: controller.signal
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: { 
+          parts: [{ 
+            text: `你现在是一位专业的电视台新闻主播或电台播音员。请用字正腔圆、情感饱满、富有感染力的播音腔朗读以下范文。要求语速适中，重音自然，展现出文学作品的韵味：\n\n${textToRead}` 
+          }] 
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
       });
-      clearTimeout(timeoutId);
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audio) {
-          setPreGeneratedAudio(data.audio);
-        }
+      if (base64Audio) {
+        setPreGeneratedAudio(base64Audio);
       }
     } catch (err) {
       console.error("语音预生成失败:", err);
@@ -400,31 +409,36 @@ export default function App() {
     }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒延时
+      // 直接在前端调用 Gemini API
+      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
       
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead }),
-        signal: controller.signal
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: { 
+          parts: [{ 
+            text: `你现在是一位专业的电视台新闻主播或电台播音员。请用字正腔圆、情感饱满、富有感染力的播音腔朗读以下范文。要求语速适中，重音自然，展现出文学作品的韵味：\n\n${textToRead}` 
+          }] 
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Kore' },
+            },
+          },
+        },
       });
-      clearTimeout(timeoutId);
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: '请求失败' }));
-        throw new Error(errData.error || 'TTS 请求失败');
-      }
 
-      const data = await res.json();
-      if (data.audio) {
-        playAudioFromBase64(data.audio);
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      
+      if (base64Audio) {
+        playAudioFromBase64(base64Audio);
       } else {
         throw new Error("未能生成音频数据");
       }
     } catch (err: any) { 
       console.error("TTS Error:", err); 
-      alert(`播放失败: ${err.message === 'The user aborted a request.' ? '请求超时，请重试' : err.message}`);
+      alert(`播放失败: ${err.message}`);
     }
     finally { setIsTTSLoading(false); }
   };
@@ -943,9 +957,22 @@ export default function App() {
                   <div className="relative group">
                     {activeAction === 'essay' && (
                       <div className="absolute top-0 right-0 no-print">
-                        <button onClick={() => playTTS(actionContent)} disabled={isTTSLoading} className={cn("p-4 rounded-2xl transition-all shadow-lg flex items-center gap-3", isPlayingAudio ? "bg-rose-500 text-white" : "bg-indigo-600 text-white hover:bg-indigo-700")}>
+                        <button 
+                          onClick={() => playTTS(actionContent)} 
+                          disabled={isTTSLoading} 
+                          className={cn(
+                            "p-4 rounded-2xl transition-all shadow-lg flex items-center gap-3", 
+                            isPlayingAudio 
+                              ? "bg-rose-500 text-white shadow-rose-200 animate-pulse" 
+                              : isTTSLoading 
+                                ? "bg-indigo-800 text-white" 
+                                : "bg-indigo-600 text-white hover:bg-indigo-700"
+                          )}
+                        >
                           {isTTSLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Volume2 className="w-5 h-5" />}
-                          <span className="text-sm font-black">{isPlayingAudio ? '停止朗读' : '播音员朗读范文'}</span>
+                          <span className="text-sm font-black">
+                            {isTTSLoading ? '正在准备播音...' : isPlayingAudio ? '停止朗读' : '播音员朗读范文'}
+                          </span>
                         </button>
                       </div>
                     )}
