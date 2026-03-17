@@ -21,6 +21,7 @@ import AdminDashboard from './components/AdminDashboard';
 
 // --- Types ---
 interface Student {
+  dbId?: number;
   id: string;
   name: string;
   choice: number;
@@ -129,12 +130,13 @@ export default function App() {
 
   useEffect(() => {
     if (user?.role === 'teacher') {
-      fetch('/api/students')
+      fetch(`/api/students?teacher_id=${user.uid}`)
         .then(res => res.ok ? res.json() : [])
         .then(data => {
           if (Array.isArray(data)) {
             setStudents(data.map(s => ({
-              id: s.student_id || s.id, 
+              dbId: s.id,
+              id: s.student_id || 'N/A', 
               name: s.name,
               choice: s.choice || 0, 
               modernReading: s.modern_reading || 0, 
@@ -152,7 +154,7 @@ export default function App() {
   const fetchAnalysisHistory = async (studentId: string) => {
     if (!studentId) return;
     try {
-      const res = await fetch(`/api/history?studentId=${studentId}`);
+      const res = await fetch(`/api/history?studentId=${studentId}&teacherId=${user?.uid}`);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data)) setAnalysisHistory(data);
@@ -171,16 +173,29 @@ export default function App() {
       const res = await fetch('/api/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([student])
+        body: JSON.stringify({ 
+          students: [student],
+          teacher_id: user?.uid 
+        })
       });
       if (res.ok) {
-        setStudents(prev => {
-          const exists = prev.find(s => s.id === student.id);
-          if (exists) {
-            return prev.map(s => s.id === student.id ? student : s);
-          }
-          return [...prev, student];
-        });
+        // 重新获取以确保 ID 同步
+        const r = await fetch(`/api/students?teacher_id=${user?.uid}`);
+        const data = await r.json();
+        if (Array.isArray(data)) {
+          setStudents(data.map(s => ({
+            dbId: s.id,
+            id: s.student_id || 'N/A',
+            name: s.name,
+            choice: s.choice || 0,
+            modernReading: s.modern_reading || 0,
+            classicReading: s.classic_reading || 0,
+            nonLinear: s.non_linear || 0,
+            dictation: s.dictation || 0,
+            composition: s.composition || 0,
+            total: s.total || 0
+          })));
+        }
         setIsEditModalOpen(false);
         setEditingStudent(null);
       } else {
@@ -192,16 +207,14 @@ export default function App() {
     }
   };
 
-  const handleDeleteStudent = async (id: string) => {
+  const handleDeleteStudent = async (dbId: number) => {
     if (window.confirm('确定要删除该学生成绩吗？此操作不可撤销。')) {
       try {
-        const res = await fetch('/api/students', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id })
+        const res = await fetch(`/api/students?id=${dbId}&teacher_id=${user?.uid}`, {
+          method: 'DELETE'
         });
         if (res.ok) {
-          setStudents(prev => prev.filter(s => s.id !== id));
+          setStudents(prev => prev.filter(s => s.dbId !== dbId));
         } else {
           const errData = await res.json().catch(() => ({ error: '未知错误' }));
           alert(`删除失败: ${errData.error || '服务器错误'}`);
@@ -234,6 +247,7 @@ export default function App() {
       const formData = new FormData();
       formData.append('title', essayTitle);
       formData.append('studentId', selectedStudentId || '');
+      formData.append('teacherId', user?.uid || '');
       essayImages.forEach(img => formData.append('images', img));
       const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
       const data = await res.json();
@@ -301,9 +315,16 @@ export default function App() {
         break;
       }
     }
+    
     if (!found) {
-      textToRead = text.length > 200 ? text.substring(150, 750) : text;
+      const markerIndex = text.indexOf('升格范文');
+      if (markerIndex !== -1) {
+        textToRead = text.substring(markerIndex + 4).trim();
+      }
     }
+    
+    // 限制长度并清理 Markdown 标记
+    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 600);
     
     try {
       const res = await fetch('/api/tts', {
@@ -421,10 +442,15 @@ export default function App() {
       }
     }
 
-    // 如果没找到明显的范文标识，则跳过可能的导语（约前150字），取后面的核心内容
     if (!found) {
-      textToRead = text.length > 200 ? text.substring(150, 750) : text;
+      const markerIndex = text.indexOf('升格范文');
+      if (markerIndex !== -1) {
+        textToRead = text.substring(markerIndex + 4).trim();
+      }
     }
+
+    // 限制长度并清理 Markdown 标记
+    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 600);
 
     try {
       const res = await fetch('/api/tts', {
@@ -511,10 +537,31 @@ export default function App() {
           fetch('/api/students', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newStudents)
+            body: JSON.stringify({ 
+              students: newStudents,
+              teacher_id: user?.uid 
+            })
           }).then(res => {
             if (res.ok) {
-              setStudents(prev => [...prev, ...newStudents]);
+              // 重新获取以获取数据库生成的 ID
+              fetch(`/api/students?teacher_id=${user?.uid}`)
+                .then(r => r.json())
+                .then(data => {
+                  if (Array.isArray(data)) {
+                    setStudents(data.map(s => ({
+                      dbId: s.id,
+                      id: s.student_id || 'N/A',
+                      name: s.name,
+                      choice: s.choice || 0,
+                      modernReading: s.modern_reading || 0,
+                      classicReading: s.classic_reading || 0,
+                      nonLinear: s.non_linear || 0,
+                      dictation: s.dictation || 0,
+                      composition: s.composition || 0,
+                      total: s.total || 0
+                    })));
+                  }
+                });
               alert(`成功导入并保存 ${newStudents.length} 名学生成绩！`);
             } else {
               alert("导入成功但保存到数据库失败，请检查网络。");
@@ -712,7 +759,7 @@ export default function App() {
                                 <Edit3 className="w-5 h-5" />
                               </button>
                               <button 
-                                onClick={() => handleDeleteStudent(s.id)} 
+                                onClick={() => s.dbId && handleDeleteStudent(s.dbId)} 
                                 title="删除记录"
                                 className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                               >
