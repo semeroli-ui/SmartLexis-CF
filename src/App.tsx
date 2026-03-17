@@ -5,7 +5,7 @@ import {
   Search, Filter, Download, Upload, LogOut, 
   ChevronRight, BrainCircuit, Target, FileText,
   Loader2, ImageIcon, History, Square, ArrowRight,
-  BarChart3, Activity, Volume2
+  BarChart3, Activity, Volume2, Edit3, Trash2
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -159,9 +159,21 @@ export default function App() {
   };
 
   const handleSaveStudent = (student: Student) => {
-    setStudents(prev => editingStudent ? prev.map(s => s.id === student.id ? student : s) : [...prev, student]);
+    setStudents(prev => {
+      const exists = prev.find(s => s.id === student.id);
+      if (exists) {
+        return prev.map(s => s.id === student.id ? student : s);
+      }
+      return [...prev, student];
+    });
     setIsEditModalOpen(false);
     setEditingStudent(null);
+  };
+
+  const handleDeleteStudent = (id: string) => {
+    if (window.confirm('确定要删除该学生成绩吗？此操作不可撤销。')) {
+      setStudents(prev => prev.filter(s => s.id !== id));
+    }
   };
 
   const generateAIAnalysis = async (student: Student) => {
@@ -491,7 +503,31 @@ export default function App() {
                           <td className="py-6 text-center text-sm font-bold text-slate-600">{s.classicReading}</td>
                           <td className="py-6 text-center text-sm font-black text-indigo-600">{s.composition}</td>
                           <td className="py-6 text-right"><span className="px-4 py-2 bg-slate-900 text-white rounded-xl text-sm font-black shadow-lg shadow-slate-900/10">{s.total}</span></td>
-                          <td className="py-6"><div className="flex items-center justify-center"><button onClick={() => { setSelectedStudentId(s.id); setView('student'); }} className="p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all"><ChevronRight className="w-6 h-6" /></button></div></td>
+                          <td className="py-6">
+                            <div className="flex items-center justify-center gap-1">
+                              <button 
+                                onClick={() => { setSelectedStudentId(s.id); setView('student'); }} 
+                                title="查看诊断报告"
+                                className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                              >
+                                <ChevronRight className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => { setEditingStudent(s); setIsEditModalOpen(true); }} 
+                                title="修改成绩"
+                                className="p-2.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all"
+                              >
+                                <Edit3 className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteStudent(s.id)} 
+                                title="删除记录"
+                                className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
