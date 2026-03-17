@@ -18,16 +18,16 @@ export async function onRequestPost(context) {
     
     const genAI = new GoogleGenAI({ apiKey });
 
-    // 角色设定：使用 systemInstruction 设定专业播音员角色，避免在正文中加入指令导致模型尝试生成文本回复
+    // 极简指令：避免复杂指令导致预览版模型 500 报错
     const response = await genAI.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
-      contents: [{ parts: [{ text: text }] }],
+      contents: [{ parts: [{ text: `请用专业播音腔朗读以下内容：\n\n${text}` }] }],
       config: {
-        systemInstruction: "你是一位专业的电视台新闻主播。请用字正腔圆、情感饱满、富有感染力的播音腔朗读。要求语速适中，重音自然，展现文学韵味。只输出音频，不要生成任何文本回复。",
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: 'Kore' },
+            // 'Zephyr' 在预览版中通常表现最稳定
+            prebuiltVoiceConfig: { voiceName: 'Zephyr' },
           },
         },
       },
