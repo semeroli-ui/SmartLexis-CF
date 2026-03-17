@@ -6,14 +6,19 @@ export async function onRequestPost(context) {
     const { text } = await request.json();
     
     if (!env.GEMINI_API_KEY) {
-      throw new Error("未配置 GEMINI_API_KEY 环境变量");
+      return new Response(JSON.stringify({ error: "未配置 GEMINI_API_KEY 环境变量" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
+
+    // 支持多 Key 轮询（如果有的话）
     const keys = env.GEMINI_API_KEY.split(',').map(k => k.trim());
     const apiKey = keys[Math.floor(Math.random() * keys.length)];
     
     const genAI = new GoogleGenAI({ apiKey });
 
-    // 角色设定：专业电视台播音员 (根据用户反馈恢复)
+    // 角色设定：专业电视台播音员
     const response = await genAI.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: { 
@@ -25,7 +30,6 @@ export async function onRequestPost(context) {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            // 'Kore' 声音通常比较稳重专业，适合播音员角色
             prebuiltVoiceConfig: { voiceName: 'Kore' },
           },
         },
@@ -34,10 +38,15 @@ export async function onRequestPost(context) {
 
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
+    if (!base64Audio) {
+      throw new Error("Gemini 未返回音频数据");
+    }
+
     return new Response(JSON.stringify({ audio: base64Audio }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
+    console.error("TTS API Error:", err);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" },
