@@ -25,7 +25,52 @@ export async function onRequest(context) {
       )
     `).run();
 
-    // 尝试添加 teacher_id 列（如果不存在）
+    // 检查并修复表结构 (SQLite 不支持直接在 ALTER TABLE 中添加 PRIMARY KEY)
+    const tableInfo = await env.DB.prepare("PRAGMA table_info(student_scores)").all();
+    const hasId = tableInfo.results.some(column => column.name === 'id');
+    
+    if (!hasId) {
+      // 如果缺少 id 列，说明是极旧版本的表，需要重建
+      // 首先检查旧表有哪些列，以防 teacher_id 也不存在
+      const oldColumns = tableInfo.results.map(c => c.name);
+      const selectCols = ['student_id', 'name', 'choice', 'modern_reading', 'classic_reading', 'non_linear', 'dictation', 'composition', 'total', 'updated_at'];
+      
+      // 过滤出旧表中确实存在的列
+      const availableCols = selectCols.filter(col => oldColumns.includes(col));
+      if (oldColumns.includes('teacher_id')) {
+        availableCols.push('teacher_id');
+      }
+
+      await env.DB.prepare("ALTER TABLE student_scores RENAME TO student_scores_old").run();
+      await env.DB.prepare(`
+        CREATE TABLE student_scores (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          student_id TEXT,
+          teacher_id TEXT,
+          name TEXT,
+          choice INTEGER,
+          modern_reading INTEGER,
+          classic_reading INTEGER,
+          non_linear INTEGER,
+          dictation INTEGER,
+          composition INTEGER,
+          total INTEGER,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+      
+      // 动态构建迁移 SQL
+      const colsStr = availableCols.join(', ');
+      await env.DB.prepare(`
+        INSERT INTO student_scores (${colsStr})
+        SELECT ${colsStr} FROM student_scores_old
+      `).run();
+      
+      // 删除旧表
+      await env.DB.prepare("DROP TABLE student_scores_old").run();
+    }
+
+    // 尝试添加 teacher_id 列（如果不存在，处理从更早版本升级的情况）
     try {
       await env.DB.prepare("ALTER TABLE student_scores ADD COLUMN teacher_id TEXT").run();
     } catch (e) {
