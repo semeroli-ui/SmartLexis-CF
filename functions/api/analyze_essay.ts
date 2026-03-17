@@ -25,6 +25,26 @@ export async function onRequestPost(context) {
       )
     `).run();
 
+    // 检查并修复表结构
+    const tableInfo = await env.DB.prepare("PRAGMA table_info(writing_records)").all();
+    const columns = tableInfo.results.map(column => column.name);
+    
+    if (!columns.includes('teacherId')) {
+      try {
+        await env.DB.prepare("ALTER TABLE writing_records ADD COLUMN teacherId TEXT").run();
+      } catch (e) {
+        console.error("Error adding teacherId column:", e);
+      }
+    }
+    
+    if (!columns.includes('studentId')) {
+      try {
+        await env.DB.prepare("ALTER TABLE writing_records ADD COLUMN studentId TEXT").run();
+      } catch (e) {
+        console.error("Error adding studentId column:", e);
+      }
+    }
+
     // 处理多个 API Key
     const keys = env.GEMINI_API_KEY.split(',').map(k => k.trim());
     const apiKey = keys[Math.floor(Math.random() * keys.length)];
