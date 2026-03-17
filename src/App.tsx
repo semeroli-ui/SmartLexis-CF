@@ -257,22 +257,63 @@ export default function App() {
     finally { setIsTTSLoading(false); }
   };
 
+  const downloadTemplate = () => {
+    // 定义表头
+    const headers = "学号,姓名,选择题,现代文阅读,文言文阅读,非连续性文本,默写填空,作文";
+    const exampleData = "2026001,张三,25,20,15,8,8,42";
+    const csvContent = `\uFEFF${headers}\n${exampleData}`; // 添加 BOM 防止 Excel 乱码
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "智语系统_成绩导入模板.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = (event.target?.result as string).split('\n').slice(1);
-      const newStudents = text.map(row => {
-        const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.split(',');
-        if (!id || !name) return null;
-        const s = { id, name, choice: parseInt(choice) || 0, modernReading: parseInt(modern) || 0, classicReading: parseInt(classic) || 0, nonLinear: parseInt(nonLinear) || 0, dictation: parseInt(dictation) || 0, composition: parseInt(composition) || 0, total: 0 };
-        s.total = s.choice + s.modernReading + s.classicReading + s.nonLinear + s.dictation + s.composition;
-        return s;
-      }).filter(Boolean) as Student[];
-      setStudents(prev => [...prev, ...newStudents]);
+      try {
+        const text = (event.target?.result as string).split('\n').slice(1);
+        const newStudents = text.map(row => {
+          if (!row.trim()) return null;
+          const [id, name, choice, modern, classic, nonLinear, dictation, composition] = row.split(',').map(v => v.trim());
+          if (!id || !name) return null;
+          
+          const s = { 
+            id, 
+            name, 
+            choice: parseInt(choice) || 0, 
+            modernReading: parseInt(modern) || 0, 
+            classicReading: parseInt(classic) || 0, 
+            nonLinear: parseInt(nonLinear) || 0, 
+            dictation: parseInt(dictation) || 0, 
+            composition: parseInt(composition) || 0, 
+            total: 0 
+          };
+          s.total = s.choice + s.modernReading + s.classicReading + s.nonLinear + s.dictation + s.composition;
+          return s;
+        }).filter(Boolean) as Student[];
+        
+        if (newStudents.length > 0) {
+          setStudents(prev => [...prev, ...newStudents]);
+          alert(`成功导入 ${newStudents.length} 名学生成绩！`);
+        } else {
+          alert("未发现有效数据，请检查模板格式。");
+        }
+      } catch (err) {
+        alert("文件解析失败，请确保使用标准的 CSV 模板。");
+      }
     };
     reader.readAsText(file);
+    // 清空 input 方便下次选择同一文件
+    e.target.value = '';
   };
 
   const handleEssayImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -346,6 +387,9 @@ export default function App() {
           {user?.role === 'teacher' && (
             <>
               <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
+              <button onClick={downloadTemplate} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+                <Download className="w-5 h-5" /> 下载模板
+              </button>
               <label className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
                 <Upload className="w-5 h-5" /> 成绩导入
                 <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
@@ -591,8 +635,8 @@ export default function App() {
 
                 {/* Radar Chart */}
                 <Card className="md:col-span-1 lg:col-span-2" title="核心素养维度" subtitle="基于 6 大题型加权计算" delay={0.4}>
-                  <div className="h-[380px] mt-6">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-[400px] mt-6 w-full">
+                    <ResponsiveContainer width="100%" height="100%" minHeight={300}>
                       <RadarChart cx="50%" cy="50%" outerRadius="80%" data={getLiteracyData(selectedStudent).map((d, i) => ({ ...d, avg: [82, 75, 78, 70, 72][i] }))}>
                         <PolarGrid stroke="#e2e8f0" />
                         <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 800 }} />
