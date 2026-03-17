@@ -331,8 +331,8 @@ export default function App() {
       }
     }
     
-    // 限制长度并清理 Markdown 标记
-    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 600);
+    // 限制长度并清理 Markdown 标记 (增加到 2000 字符以支持完整范文)
+    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
     
     try {
       const res = await fetch('/api/tts', {
@@ -457,8 +457,8 @@ export default function App() {
       }
     }
 
-    // 限制长度并清理 Markdown 标记
-    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 600);
+    // 限制长度并清理 Markdown 标记 (增加到 2000 字符以支持完整范文)
+    textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
 
     try {
       const res = await fetch('/api/tts', {
@@ -606,7 +606,44 @@ export default function App() {
   const classStats = {
     avg: students.length ? Math.round(students.reduce((acc, s) => acc + s.total, 0) / students.length) : 0,
     passRate: students.length ? Math.round((students.filter(s => s.total >= 90).length / students.length) * 100) : 0,
-    excellentRate: students.length ? Math.round((students.filter(s => s.total >= 120).length / students.length) * 100) : 0
+    excellentRate: students.length ? Math.round((students.filter(s => s.total >= 120).length / students.length) * 100) : 0,
+    attentionCount: students.filter(s => s.total < 90).length
+  };
+
+  const getScoreDistribution = () => {
+    const ranges = [
+      { range: '130+', min: 130, max: 150 },
+      { range: '120-130', min: 120, max: 130 },
+      { range: '110-120', min: 110, max: 120 },
+      { range: '100-110', min: 100, max: 110 },
+      { range: '90-100', min: 90, max: 100 },
+      { range: '<90', min: 0, max: 90 }
+    ];
+    return ranges.map(r => ({
+      range: r.range,
+      count: students.filter(s => s.total >= r.min && s.total < r.max).length + (r.min === 130 ? students.filter(s => s.total === 150).length : 0)
+    }));
+  };
+
+  const getTypePerformance = () => {
+    if (!students.length) return [];
+    const types = [
+      { label: '选择题', key: 'choice', max: 30 },
+      { label: '现代文阅读', key: 'modernReading', max: 35 },
+      { label: '文言文阅读', key: 'classicReading', max: 20 },
+      { label: '默写填空', key: 'dictation', max: 10 },
+      { label: '作文', key: 'composition', max: 50 }
+    ];
+    return types.map(t => {
+      const avg = students.reduce((acc, s) => acc + (s as any)[t.key], 0) / students.length;
+      const rate = Math.round((avg / t.max) * 100);
+      let color = 'bg-indigo-500';
+      if (rate >= 85) color = 'bg-emerald-500';
+      else if (rate >= 75) color = 'bg-emerald-400';
+      else if (rate >= 60) color = 'bg-amber-500';
+      else color = 'bg-rose-500';
+      return { label: t.label, val: rate, color };
+    }).sort((a, b) => b.val - a.val);
   };
 
   const getLiteracyData = (s: Student) => [
@@ -691,7 +728,7 @@ export default function App() {
               <header className="flex flex-col md:flex-row md:items-end justify-between gap-8">
                 <div>
                   <h1 className="text-5xl font-black text-slate-900 tracking-tighter">班级学情看板</h1>
-                  <p className="text-slate-500 mt-3 font-bold text-lg">高二(3)班 · 2026年春季第一次月考分析</p>
+                  <p className="text-slate-500 mt-3 font-bold text-lg">{user?.name}的班级 · 实时学情诊断分析</p>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="relative">
@@ -702,16 +739,16 @@ export default function App() {
                 </div>
               </header>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatBox label="班级平均分" value={classStats.avg} subValue="+2.4" icon={TrendingUp} colorClass="bg-indigo-50 text-indigo-600" delay={0.1} />
-                <StatBox label="及格率 (90+)" value={`${classStats.passRate}%`} subValue="↑ 5%" icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" delay={0.2} />
-                <StatBox label="优秀率 (120+)" value={`${classStats.excellentRate}%`} subValue="稳定" icon={Award} colorClass="bg-amber-50 text-amber-600" delay={0.3} />
-                <StatBox label="待关注人数" value="5" subValue="需辅导" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" delay={0.4} />
+                <StatBox label="班级平均分" value={classStats.avg} subValue={students.length > 0 ? "实时计算" : "暂无数据"} icon={TrendingUp} colorClass="bg-indigo-50 text-indigo-600" delay={0.1} />
+                <StatBox label="及格率 (90+)" value={`${classStats.passRate}%`} subValue={classStats.passRate >= 80 ? "表现优秀" : "需提升"} icon={CheckCircle2} colorClass="bg-emerald-50 text-emerald-600" delay={0.2} />
+                <StatBox label="优秀率 (120+)" value={`${classStats.excellentRate}%`} subValue={classStats.excellentRate >= 20 ? "稳定" : "待突破"} icon={Award} colorClass="bg-amber-50 text-amber-600" delay={0.3} />
+                <StatBox label="待关注人数" value={classStats.attentionCount} subValue="需辅导" icon={AlertCircle} colorClass="bg-rose-50 text-rose-600" delay={0.4} />
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <Card title="分数段分布" subtitle="全班成绩正态分布" className="lg:col-span-2" delay={0.5}>
                   <div className="h-[360px] mt-6">
                     <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                      <BarChart data={[{ range: '130+', count: 4 }, { range: '120-130', count: 12 }, { range: '110-120', count: 18 }, { range: '100-110', count: 15 }, { range: '90-100', count: 6 }, { range: '<90', count: 5 }]}>
+                      <BarChart data={getScoreDistribution()}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 600}} />
                         <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#94a3b8', fontWeight: 600}} />
@@ -725,7 +762,7 @@ export default function App() {
                 </Card>
                 <Card title="题型得分率排行" subtitle="全班平均表现" delay={0.6}>
                   <div className="space-y-8 mt-6">
-                    {[{ label: '选择题', val: 88, color: 'bg-emerald-500' }, { label: '默写填空', val: 82, color: 'bg-emerald-400' }, { label: '作文', val: 74, color: 'bg-indigo-500' }, { label: '现代文阅读', val: 68, color: 'bg-amber-500' }, { label: '文言文阅读', val: 52, color: 'bg-rose-500' }].map(item => (
+                    {getTypePerformance().map(item => (
                       <div key={item.label}>
                         <div className="flex justify-between text-xs font-black mb-3"><span className="text-slate-600">{item.label}</span><span className="text-slate-900">{item.val}%</span></div>
                         <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
