@@ -15,18 +15,18 @@ export async function onRequestPost(context) {
     const genAI = new GoogleGenAI({ apiKey });
 
     // 角色设定：专业电视台播音员
+    // 简化提示词以加快生成速度，避免超时
     const response = await genAI.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
       contents: { 
         parts: [{ 
-          text: `你现在是一位专业的电视台新闻主播或电台播音员。请用字正腔圆、情感饱满、富有感染力的播音腔朗读以下范文。要求语速适中，重音自然，展现出文学作品的韵味：\n\n${text}` 
+          text: `请用专业播音员的语气朗读以下范文：\n\n${text}` 
         }] 
       },
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {
           voiceConfig: {
-            // 'Kore' 声音通常比较稳重专业，适合播音员角色
             prebuiltVoiceConfig: { voiceName: 'Kore' },
           },
         },
