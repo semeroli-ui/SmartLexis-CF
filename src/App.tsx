@@ -541,7 +541,7 @@ export default function App() {
               students: newStudents,
               teacher_id: user?.uid 
             })
-          }).then(res => {
+          }).then(async res => {
             if (res.ok) {
               // 重新获取以获取数据库生成的 ID
               fetch(`/api/students?teacher_id=${user?.uid}`)
@@ -564,8 +564,12 @@ export default function App() {
                 });
               alert(`成功导入并保存 ${newStudents.length} 名学生成绩！`);
             } else {
-              alert("导入成功但保存到数据库失败，请检查网络。");
+              const errData = await res.json().catch(() => ({}));
+              alert(`导入失败: ${errData.error || '服务器错误，请检查网络或联系管理员'}`);
             }
+          }).catch(err => {
+            console.error("Upload error:", err);
+            alert("网络连接失败，请检查您的网络设置。");
           });
         } else {
           alert("未发现有效数据，请检查模板格式。");
