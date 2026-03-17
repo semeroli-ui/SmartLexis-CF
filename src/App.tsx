@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -295,30 +294,17 @@ export default function App() {
     }
     
     try {
-      // 直接在前端调用 Gemini API，解决后端连接超时和 405 错误
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      
-      const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: { 
-          parts: [{ 
-            text: `你现在是一位专业的电视台新闻主播或电台播音员。请用字正腔圆、情感饱满、富有感染力的播音腔朗读以下范文。要求语速适中，重音自然，展现出文学作品的韵味：\n\n${textToRead}` 
-          }] 
-        },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead })
       });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       
-      if (base64Audio) {
-        setPreGeneratedAudio(base64Audio);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio) {
+          setPreGeneratedAudio(data.audio);
+        }
       }
     } catch (err) {
       console.error("语音预生成失败:", err);
@@ -326,64 +312,70 @@ export default function App() {
   };
 
   const playAudioFromBase64 = (base64: string) => {
-    const binaryString = window.atob(base64);
-    const len = binaryString.length;
-    const buffer = new ArrayBuffer(44 + len);
-    const view = new DataView(buffer);
-    const sampleRate = 24000;
+    try {
+      const binaryString = window.atob(base64);
+      const len = binaryString.length;
+      const buffer = new ArrayBuffer(44 + len);
+      const view = new DataView(buffer);
+      const sampleRate = 24000;
 
-    // RIFF identifier
-    view.setUint32(0, 0x52494646, false);
-    // file length
-    view.setUint32(4, 36 + len, true);
-    // RIFF type
-    view.setUint32(8, 0x57415645, false);
-    // format chunk identifier
-    view.setUint32(12, 0x666d7420, false);
-    // format chunk length
-    view.setUint32(16, 16, true);
-    // sample format (raw PCM)
-    view.setUint16(20, 1, true);
-    // channel count (1 for mono)
-    view.setUint16(22, 1, true);
-    // sample rate
-    view.setUint32(24, sampleRate, true);
-    // byte rate (sample rate * block align)
-    view.setUint32(28, sampleRate * 2, true);
-    // block align (channel count * bytes per sample)
-    view.setUint16(32, 2, true);
-    // bits per sample
-    view.setUint16(34, 16, true);
-    // data chunk identifier
-    view.setUint32(36, 0x64617461, false);
-    // data chunk length
-    view.setUint32(40, len, true);
+      // RIFF identifier
+      view.setUint32(0, 0x52494646, false);
+      // file length
+      view.setUint32(4, 36 + len, true);
+      // RIFF type
+      view.setUint32(8, 0x57415645, false);
+      // format chunk identifier
+      view.setUint32(12, 0x666d7420, false);
+      // format chunk length
+      view.setUint32(16, 16, true);
+      // sample format (raw PCM)
+      view.setUint16(20, 1, true);
+      // channel count (1 for mono)
+      view.setUint16(22, 1, true);
+      // sample rate
+      view.setUint32(24, sampleRate, true);
+      // byte rate (sample rate * block align)
+      view.setUint32(28, sampleRate * 2, true);
+      // block align (channel count * bytes per sample)
+      view.setUint16(32, 2, true);
+      // bits per sample
+      view.setUint16(34, 16, true);
+      // data chunk identifier
+      view.setUint32(36, 0x64617461, false);
+      // data chunk length
+      view.setUint32(40, len, true);
 
-    for (let i = 0; i < len; i++) {
-      view.setUint8(44 + i, binaryString.charCodeAt(i));
+      for (let i = 0; i < len; i++) {
+        view.setUint8(44 + i, binaryString.charCodeAt(i));
+      }
+
+      const blob = new Blob([buffer], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onplay = () => setIsPlayingAudio(true);
+      audio.onerror = (e) => {
+        console.error("Audio playback error:", e);
+        setIsPlayingAudio(false);
+        setIsTTSLoading(false);
+        alert("音频播放失败，请重试");
+      };
+      audio.onended = () => { 
+        setIsPlayingAudio(false); 
+        audioRef.current = null; 
+        URL.revokeObjectURL(url); 
+      };
+      audio.play().catch(err => {
+        console.error("Play error:", err);
+        setIsPlayingAudio(false);
+        setIsTTSLoading(false);
+      });
+    } catch (err) {
+      console.error("Base64 decode error:", err);
+      alert("音频数据解析失败");
+      setIsTTSLoading(false);
     }
-
-    const blob = new Blob([buffer], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audioRef.current = audio;
-    audio.onplay = () => setIsPlayingAudio(true);
-    audio.onerror = (e) => {
-      console.error("Audio playback error:", e);
-      setIsPlayingAudio(false);
-      setIsTTSLoading(false);
-      alert("音频播放失败，请重试");
-    };
-    audio.onended = () => { 
-      setIsPlayingAudio(false); 
-      audioRef.current = null; 
-      URL.revokeObjectURL(url); 
-    };
-    audio.play().catch(err => {
-      console.error("Play error:", err);
-      setIsPlayingAudio(false);
-      setIsTTSLoading(false);
-    });
   };
 
   const playTTS = async (text: string) => {
@@ -409,30 +401,20 @@ export default function App() {
     }
 
     try {
-      // 直接在前端调用 Gemini API
-      const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
-      
-      const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: { 
-          parts: [{ 
-            text: `你现在是一位专业的电视台新闻主播或电台播音员。请用字正腔圆、情感饱满、富有感染力的播音腔朗读以下范文。要求语速适中，重音自然，展现出文学作品的韵味：\n\n${textToRead}` 
-          }] 
-        },
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead })
       });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       
-      if (base64Audio) {
-        playAudioFromBase64(base64Audio);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: '请求失败' }));
+        throw new Error(errData.error || 'TTS 请求失败');
+      }
+
+      const data = await res.json();
+      if (data.audio) {
+        playAudioFromBase64(data.audio);
       } else {
         throw new Error("未能生成音频数据");
       }
