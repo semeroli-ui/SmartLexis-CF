@@ -202,7 +202,8 @@ export default function App() {
         if (res.ok) {
           setStudents(prev => prev.filter(s => s.id !== id));
         } else {
-          alert("删除失败");
+          const errData = await res.json().catch(() => ({ error: '未知错误' }));
+          alert(`删除失败: ${errData.error || '服务器错误'}`);
         }
       } catch (err) {
         console.error(err);
@@ -284,8 +285,14 @@ export default function App() {
     }
     setIsTTSLoading(true);
     let textToRead = text;
-    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|$)/);
-    if (match && match[1]) textToRead = match[1].trim();
+    // 尝试提取范文正文，避免朗读冗长的诊断报告导致超时
+    const match = text.match(/(?:【升格范文】|升格范文|范文正文)([\s\S]*?)(?=【亮点解析】|亮点解析|升格解析|【|$)/);
+    if (match && match[1]) {
+      textToRead = match[1].trim();
+    } else {
+      // 如果提取失败，限制长度，防止请求过大导致超时
+      textToRead = text.substring(0, 500);
+    }
 
     try {
       const res = await fetch('/api/tts', {
