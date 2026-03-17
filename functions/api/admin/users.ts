@@ -2,7 +2,7 @@ export async function onRequestGet(context) {
   const { env } = context;
   try {
     const { results } = await env.DB.prepare(
-      "SELECT uid, email, name, role, studentId FROM users"
+      "SELECT uid, email, name, role, studentId, createdAt FROM users"
     ).all();
     return new Response(JSON.stringify(results), {
       headers: { "Content-Type": "application/json" },
