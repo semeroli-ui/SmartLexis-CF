@@ -290,7 +290,7 @@ export default function App() {
     if (match && match[1]) {
       textToRead = match[1].trim();
     } else {
-      textToRead = text.substring(0, 1000);
+      textToRead = text.substring(0, 600);
     }
     
     try {
@@ -397,7 +397,7 @@ export default function App() {
     if (match && match[1]) {
       textToRead = match[1].trim();
     } else {
-      textToRead = text.substring(0, 1000);
+      textToRead = text.substring(0, 600);
     }
 
     try {
