@@ -25,6 +25,13 @@ export async function onRequest(context) {
       )
     `).run();
 
+    // 尝试添加 teacher_id 列（如果不存在）
+    try {
+      await env.DB.prepare("ALTER TABLE student_scores ADD COLUMN teacher_id TEXT").run();
+    } catch (e) {
+      // 如果列已存在，会报错，忽略即可
+    }
+
     if (method === "GET") {
       const url = new URL(request.url);
       const teacherId = url.searchParams.get("teacher_id");
@@ -101,8 +108,8 @@ export async function onRequest(context) {
       const teacherId = url.searchParams.get("teacher_id");
       const isAdmin = url.searchParams.get("is_admin") === "true";
 
-      if (!id) {
-        return new Response(JSON.stringify({ error: "缺少记录ID" }), { status: 400 });
+      if (!id || id === "undefined" || id === "null") {
+        return new Response(JSON.stringify({ error: "无效的记录ID" }), { status: 400 });
       }
 
       if (isAdmin) {
