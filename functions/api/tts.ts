@@ -6,6 +6,9 @@ export async function onRequestPost(context) {
     const { text } = await request.json();
     
     // 处理多个 API Key
+    if (!env.GEMINI_API_KEY) {
+      throw new Error("未配置 GEMINI_API_KEY 环境变量");
+    }
     const keys = env.GEMINI_API_KEY.split(',').map(k => k.trim());
     const apiKey = keys[Math.floor(Math.random() * keys.length)];
     
