@@ -9,7 +9,7 @@ export async function onRequestPost(context) {
     const genAI = new GoogleGenAI({ apiKey });
 
     const response = await genAI.models.generateContent({
-      model: "gemini-3.1-flash-preview",
+      model: "gemini-3-flash-preview",
       contents: `你是一位资深的语文特级教师。请对以下作文进行“升格”处理。
       题目：《${title}》
       原文内容：${content}
