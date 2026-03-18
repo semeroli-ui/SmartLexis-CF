@@ -25,6 +25,23 @@ export async function onRequest(context) {
       )
     `).run();
 
+    // 添加成绩历史表，用于成长曲线
+    await env.DB.prepare(`
+      CREATE TABLE IF NOT EXISTS score_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id TEXT,
+        teacher_id TEXT,
+        choice INTEGER,
+        modern_reading INTEGER,
+        classic_reading INTEGER,
+        non_linear INTEGER,
+        dictation INTEGER,
+        composition INTEGER,
+        total INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
     // 检查并修复表结构 (SQLite 不支持直接在 ALTER TABLE 中添加 PRIMARY KEY)
     const tableInfo = await env.DB.prepare("PRAGMA table_info(student_scores)").all();
     const hasId = tableInfo.results.some(column => column.name === 'id');
@@ -80,14 +97,33 @@ export async function onRequest(context) {
     if (method === "GET") {
       const url = new URL(request.url);
       const teacherId = url.searchParams.get("teacher_id");
+      const studentId = url.searchParams.get("student_id");
+      const getHistory = url.searchParams.get("history") === "true";
       const isAdmin = url.searchParams.get("is_admin") === "true";
+
+      if (getHistory && studentId) {
+        const { results } = await env.DB.prepare("SELECT * FROM score_history WHERE student_id = ? ORDER BY created_at ASC").bind(studentId).all();
+        return new Response(JSON.stringify(results || []), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
 
       let query = "SELECT * FROM student_scores";
       let params: any[] = [];
 
-      if (!isAdmin && teacherId) {
+      if (studentId) {
+        query += " WHERE student_id = ?";
+        params.push(studentId);
+      } else if (isAdmin) {
+        // 管理员可以查看所有
+      } else if (teacherId) {
         query += " WHERE teacher_id = ?";
         params.push(teacherId);
+      } else {
+        // 既不是管理员，也没提供 teacher_id/student_id，返回空
+        return new Response(JSON.stringify([]), {
+          headers: { "Content-Type": "application/json" },
+        });
       }
 
       query += " ORDER BY updated_at DESC";
@@ -115,6 +151,15 @@ export async function onRequest(context) {
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND teacher_id = ?
           `).bind(s.name, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total, s.dbId, teacher_id).run();
+          
+          // 记录历史
+          const sid = s.id || (await env.DB.prepare("SELECT student_id FROM student_scores WHERE id = ?").bind(s.dbId).first())?.student_id;
+          if (sid) {
+            await env.DB.prepare(`
+              INSERT INTO score_history (student_id, teacher_id, choice, modern_reading, classic_reading, non_linear, dictation, composition, total)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(sid, teacher_id, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total).run();
+          }
           continue;
         }
 
@@ -132,6 +177,12 @@ export async function onRequest(context) {
                 updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
             `).bind(s.name, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total, existing.id).run();
+            
+            // 记录历史
+            await env.DB.prepare(`
+              INSERT INTO score_history (student_id, teacher_id, choice, modern_reading, classic_reading, non_linear, dictation, composition, total)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(s.id, teacher_id, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total).run();
             continue;
           }
         }
@@ -140,6 +191,14 @@ export async function onRequest(context) {
           INSERT INTO student_scores (student_id, teacher_id, name, choice, modern_reading, classic_reading, non_linear, dictation, composition, total, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         `).bind(s.id || null, teacher_id, s.name, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total).run();
+        
+        // 记录历史
+        if (s.id) {
+          await env.DB.prepare(`
+            INSERT INTO score_history (student_id, teacher_id, choice, modern_reading, classic_reading, non_linear, dictation, composition, total)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(s.id, teacher_id, s.choice, s.modernReading, s.classicReading, s.nonLinear, s.dictation, s.composition, s.total).run();
+        }
       }
 
       return new Response(JSON.stringify({ success: true }), {
