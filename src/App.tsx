@@ -5,16 +5,20 @@ import {
   Search, Filter, Download, Upload, LogOut, 
   ChevronRight, BrainCircuit, Target, FileText,
   Loader2, ImageIcon, History, Square, ArrowRight,
-  BarChart3, Activity, Volume2, Edit3, Trash2
+  BarChart3, Activity, Volume2, Edit3, Trash2,
+  Bookmark, Library, LayoutDashboard, Menu, X
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, RadarChart, PolarGrid, 
-  PolarAngleAxis, PolarRadiusAxis, Radar, Legend
+  PolarAngleAxis, PolarRadiusAxis, Radar, Legend,
+  LineChart, Line
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import * as XLSX from 'xlsx';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { cn } from './lib/utils';
 import Auth from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
@@ -48,6 +52,49 @@ interface User {
   name: string;
   role: 'student' | 'teacher' | 'admin';
   studentId?: string;
+}
+
+interface ScoreHistory {
+  id: number;
+  student_id: string;
+  choice: number;
+  modern_reading: number;
+  classic_reading: number;
+  non_linear: number;
+  dictation: number;
+  composition: number;
+  total: number;
+  created_at: string;
+}
+
+interface PracticeQuestion {
+  id: number;
+  type: 'choice';
+  content: string;
+  options: string[];
+  answer: string;
+  analysis: string;
+}
+
+interface PracticeData {
+  title: string;
+  introduction: string;
+  reading_material?: string;
+  questions: PracticeQuestion[];
+  writing_task?: {
+    title: string;
+    requirement: string;
+    guidance: string;
+  };
+}
+
+interface WritingMaterial {
+  id: number;
+  student_id: string;
+  content: string;
+  theme: string;
+  source_title: string;
+  created_at: string;
 }
 
 // --- UI Components ---
@@ -88,9 +135,257 @@ const StatBox = ({ label, value, subValue, icon: Icon, colorClass, delay = 0 }: 
   </motion.div>
 );
 
+const GrowthCurve = ({ history }: { history: ScoreHistory[] }) => {
+  if (!history || history.length === 0) return null;
+  
+  const data = history.map(h => ({
+    date: new Date(h.created_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }),
+    total: h.total,
+    composition: h.composition,
+    reading: h.modern_reading + h.classic_reading
+  }));
+
+  return (
+    <div className="h-[300px] w-full mt-4">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+          <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+          <Tooltip 
+            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+          />
+          <Legend iconType="circle" wrapperStyle={{ fontSize: 12, paddingTop: 20 }} />
+          <Line type="monotone" dataKey="total" name="总分" stroke="#6366f1" strokeWidth={3} dot={{ r: 4, fill: '#6366f1' }} activeDot={{ r: 6 }} />
+          <Line type="monotone" dataKey="composition" name="作文" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+          <Line type="monotone" dataKey="reading" name="阅读" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+const InteractivePractice = ({ data }: { data: PracticeData }) => {
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [showAnalysis, setShowAnalysis] = useState<Record<number, boolean>>({});
+
+  return (
+    <div className="space-y-8">
+      <div className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
+        <h4 className="text-lg font-bold text-indigo-900 mb-2">{data.title}</h4>
+        <p className="text-sm text-indigo-700 leading-relaxed">{data.introduction}</p>
+      </div>
+
+      {data.reading_material && (
+        <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm">
+          <h5 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">阅读材料</h5>
+          <div className="text-slate-700 leading-loose text-lg font-serif italic">
+            {data.reading_material}
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {data.questions.map((q, idx) => (
+          <div key={q.id} className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm hover:border-indigo-100 transition-colors">
+            <div className="flex items-start gap-4">
+              <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm shrink-0">
+                {idx + 1}
+              </span>
+              <div className="flex-1">
+                <p className="text-slate-900 font-medium mb-6 text-lg">{q.content}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {q.options.map((opt) => {
+                    const optKey = opt.charAt(0);
+                    const isSelected = answers[q.id] === optKey;
+                    const isCorrect = q.answer === optKey;
+                    const showResult = showAnalysis[q.id];
+
+                    return (
+                      <button
+                        key={opt}
+                        onClick={() => !showResult && setAnswers(prev => ({ ...prev, [q.id]: optKey }))}
+                        className={cn(
+                          "px-6 py-4 rounded-2xl text-left text-sm font-medium transition-all border-2",
+                          isSelected 
+                            ? (showResult ? (isCorrect ? "bg-emerald-50 border-emerald-500 text-emerald-700" : "bg-rose-50 border-rose-500 text-rose-700") : "bg-indigo-50 border-indigo-500 text-indigo-700")
+                            : "bg-slate-50 border-transparent text-slate-600 hover:bg-slate-100"
+                        )}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 flex items-center gap-4">
+                  <button 
+                    onClick={() => setShowAnalysis(prev => ({ ...prev, [q.id]: !prev[q.id] }))}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-2"
+                  >
+                    {showAnalysis[q.id] ? "隐藏解析" : "查看解析"}
+                    <ChevronRight className={cn("w-4 h-4 transition-transform", showAnalysis[q.id] && "rotate-90")} />
+                  </button>
+                  {answers[q.id] && !showAnalysis[q.id] && (
+                    <span className="text-xs font-bold text-emerald-500 flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" /> 已选择
+                    </span>
+                  )}
+                </div>
+
+                <AnimatePresence>
+                  {showAnalysis[q.id] && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-6 pt-6 border-t border-slate-100">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">正确答案:</span>
+                          <span className="text-lg font-black text-emerald-500">{q.answer}</span>
+                        </div>
+                        <p className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-2xl">
+                          {q.analysis}
+                        </p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {data.writing_task && (
+        <div className="bg-white p-8 rounded-3xl border-2 border-dashed border-indigo-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-500 flex items-center justify-center">
+              <PenTool className="text-white w-5 h-5" />
+            </div>
+            <h5 className="text-xl font-bold text-slate-900">{data.writing_task.title}</h5>
+          </div>
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">写作要求</p>
+              <p className="text-slate-700 leading-relaxed">{data.writing_task.requirement}</p>
+            </div>
+            <div className="bg-indigo-50/50 p-6 rounded-2xl">
+              <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-2">写作指导</p>
+              <p className="text-indigo-900 text-sm leading-relaxed">{data.writing_task.guidance}</p>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ClassHeatmap = ({ students }: { students: Student[] }) => {
+  if (!students.length) return null;
+  
+  const types = [
+    { label: '选择题', key: 'choice', max: 30 },
+    { label: '现代文阅读', key: 'modernReading', max: 35 },
+    { label: '文言文阅读', key: 'classicReading', max: 20 },
+    { label: '非连续性', key: 'nonLinear', max: 10 },
+    { label: '默写填空', key: 'dictation', max: 10 },
+    { label: '作文', key: 'composition', max: 50 }
+  ];
+
+  const data = types.map(t => {
+    const avg = students.reduce((acc, s) => acc + ((s as any)[t.key] || 0), 0) / students.length;
+    const rate = Math.round((avg / t.max) * 100);
+    return { name: t.label, rate };
+  });
+
+  return (
+    <div className="h-[300px] w-full mt-4">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical">
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+          <XAxis type="number" domain={[0, 100]} hide />
+          <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 'bold' }} width={80} />
+          <Tooltip 
+            cursor={{ fill: '#f8fafc' }}
+            contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+            formatter={(value) => [`${value}%`, '掌握率']}
+          />
+          <Bar dataKey="rate" radius={[0, 12, 12, 0]} barSize={24}>
+            {data.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={entry.rate >= 80 ? '#10b981' : entry.rate >= 60 ? '#6366f1' : '#f43f5e'} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+const MaterialLibrary = ({ materials, onDelete }: { materials: WritingMaterial[], onDelete: (id: number) => void }) => {
+  const [filterTheme, setFilterTheme] = useState('全部');
+  const themes = ['全部', ...Array.from(new Set(materials.map(m => m.theme)))];
+  
+  const filtered = filterTheme === '全部' ? materials : materials.filter(m => m.theme === filterTheme);
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">作文素材库</h2>
+          <p className="text-slate-500 font-bold mt-1">积累 AI 升格范文中的精彩表达</p>
+        </div>
+        <div className="flex gap-2 overflow-x-auto pb-2 max-w-md">
+          {themes.map(t => (
+            <button
+              key={t}
+              onClick={() => setFilterTheme(t)}
+              className={cn(
+                "px-4 py-2 rounded-full text-xs font-black transition-all whitespace-nowrap",
+                filterTheme === t ? "bg-indigo-600 text-white" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {filtered.length > 0 ? filtered.map((m, idx) => (
+          <motion.div
+            key={m.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.05 }}
+            className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-indigo-500/5 transition-all group relative"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest">{m.theme}</span>
+              <button onClick={() => onDelete(m.id)} className="p-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
+            </div>
+            <p className="text-slate-700 leading-loose font-serif italic text-lg mb-6">“{m.content}”</p>
+            <div className="flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <span>来源: {m.source_title}</span>
+              <span>{new Date(m.created_at).toLocaleDateString()}</span>
+            </div>
+          </motion.div>
+        )) : (
+          <div className="col-span-full py-24 text-center opacity-30">
+            <Bookmark className="w-20 h-20 text-slate-300 mx-auto mb-4" />
+            <p className="text-base text-slate-400 font-black">暂无收藏素材，快去 AI 升格范文中看看吧</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<'teacher' | 'student' | 'admin'>('teacher');
+  const [view, setView] = useState<'teacher' | 'student' | 'admin' | 'materials'>('teacher');
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,6 +396,11 @@ export default function App() {
   const [activeAction, setActiveAction] = useState<'practice' | 'essay' | 'graph' | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [actionContent, setActionContent] = useState<string | null>(null);
+  const [goldenSentences, setGoldenSentences] = useState<{content: string, theme: string}[]>([]);
+  const [practiceData, setPracticeData] = useState<PracticeData | null>(null);
+  const [scoreHistory, setScoreHistory] = useState<ScoreHistory[]>([]);
+  const [materials, setMaterials] = useState<WritingMaterial[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [essayTitle, setEssayTitle] = useState('');
   const [essayImages, setEssayImages] = useState<string[]>([]);
   const [isAnalyzingEssay, setIsAnalyzingEssay] = useState(false);
@@ -196,11 +496,14 @@ export default function App() {
       // 如果是老师，直接使用自己的 UID
       if (user.role === 'teacher') {
         fetchAnalysisHistory(selectedStudentId, user.uid);
+        fetchScoreHistory(selectedStudentId);
       } else {
         // 如果是学生，从 students 列表中找到对应的 teacher_id
         const student = students.find(s => s.id === selectedStudentId);
         if (student?.teacher_id) {
           fetchAnalysisHistory(selectedStudentId, student.teacher_id);
+          fetchScoreHistory(selectedStudentId);
+          fetchMaterials(selectedStudentId);
         }
       }
     }
@@ -217,6 +520,75 @@ export default function App() {
         if (Array.isArray(data)) setAnalysisHistory(data);
       }
     } catch (err) { console.error(err); }
+  };
+
+  const fetchScoreHistory = async (studentId: string) => {
+    try {
+      const res = await fetch(`/api/students?student_id=${studentId}&history=true`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setScoreHistory(data);
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchMaterials = async (studentId: string) => {
+    try {
+      const res = await fetch(`/api/materials?student_id=${studentId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setMaterials(data);
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const saveMaterial = async (content: string, theme: string, sourceTitle: string) => {
+    if (!selectedStudentId) return;
+    try {
+      const res = await fetch('/api/materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: selectedStudentId,
+          content,
+          theme,
+          source_title: sourceTitle
+        })
+      });
+      if (res.ok) {
+        fetchMaterials(selectedStudentId);
+        alert("收藏成功！已存入素材库。");
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const deleteMaterial = async (id: number) => {
+    try {
+      const res = await fetch(`/api/materials?id=${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMaterials(prev => prev.filter(m => m.id !== id));
+      }
+    } catch (err) { console.error(err); }
+  };
+
+  const exportToPDF = async (elementId: string, filename: string) => {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    try {
+      const canvas = await html2canvas(element, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(filename);
+    } catch (err) {
+      console.error("PDF Export Error:", err);
+      alert("导出 PDF 失败，请重试");
+    }
   };
 
   const handleLogout = () => {
@@ -368,8 +740,26 @@ export default function App() {
       
       const data = await res.json();
       const text = data.text || "生成失败";
-      setActionContent(text);
-      if (text) preGenerateTTS(text);
+      
+      // Parse golden sentences
+      const goldenSection = text.split('【金句推荐】')[1];
+      if (goldenSection) {
+        const sentences = goldenSection.trim().split('\n')
+          .filter(line => line.startsWith('-'))
+          .map(line => {
+            const parts = line.replace('-', '').split('|');
+            return {
+              content: (parts[0] || '').trim(),
+              theme: (parts[1] || '其他').trim()
+            };
+          });
+        setGoldenSentences(sentences);
+      } else {
+        setGoldenSentences([]);
+      }
+
+      setActionContent(text.split('【金句推荐】')[0]);
+      if (text) preGenerateTTS(text.split('【金句推荐】')[0]);
     } catch (err: any) { 
       console.error("Upgrade Essay Error:", err);
       setActionContent("生成失败: " + err.message); 
@@ -384,6 +774,7 @@ export default function App() {
     }
     setIsActionLoading(true);
     setActiveAction('practice');
+    setPracticeData(null);
     try {
       // 使用已定义的 selectedStudent 确保数据存在
       const res = await fetch('/api/generate_practice', {
@@ -398,10 +789,10 @@ export default function App() {
       }
       
       const data = await res.json();
-      setActionContent(data.text || "生成失败");
+      setPracticeData(data);
     } catch (err: any) { 
       console.error("Generate Practice Error:", err);
-      setActionContent("生成失败: " + err.message); 
+      alert("生成失败: " + err.message); 
     }
     finally { setIsActionLoading(false); }
   };
@@ -770,7 +1161,88 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
-      {/* Sidebar */}
+      {/* Mobile Top Bar */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-100 z-[60] flex items-center justify-between px-6">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center">
+            <Sparkles className="text-white w-5 h-5" />
+          </div>
+          <span className="font-bold text-lg tracking-tight">智语 SmartLexis</span>
+        </div>
+        <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-500 hover:bg-slate-50 rounded-xl transition-all">
+          <Menu className="w-6 h-6" />
+        </button>
+      </div>
+
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {isSidebarOpen && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] lg:hidden"
+            />
+            <motion.aside 
+              initial={{ x: '-100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 left-0 h-full w-72 bg-slate-900 text-white z-[80] flex flex-col p-8 lg:hidden"
+            >
+              <div className="flex items-center justify-between mb-12">
+                <div className="flex items-center gap-4">
+                  <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center">
+                    <Sparkles className="text-white w-6 h-6" />
+                  </div>
+                  <span className="font-bold text-lg">智语系统</span>
+                </div>
+                <button onClick={() => setIsSidebarOpen(false)} className="p-2 text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
+              </div>
+              <nav className="space-y-2 flex-1">
+                {user?.role === 'teacher' && (
+                  <button onClick={() => { setView('teacher'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'teacher' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+                    <BarChart3 className="w-5 h-5" /> 班级看板
+                  </button>
+                )}
+                <button onClick={() => { setView('student'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+                  <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
+                </button>
+                {user?.role === 'student' && (
+                  <button onClick={() => { setView('materials'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+                    <Bookmark className="w-5 h-5" /> 作文素材库
+                  </button>
+                )}
+                {user?.role === 'teacher' && (
+                  <>
+                    <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
+                    <button onClick={downloadTemplate} className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all">
+                      <Download className="w-5 h-5" /> 下载模板
+                    </button>
+                    <label className="w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold text-slate-400 hover:bg-slate-800 hover:text-white transition-all cursor-pointer">
+                      <Upload className="w-5 h-5" /> 成绩导入
+                      <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleFileUpload} />
+                    </label>
+                  </>
+                )}
+              </nav>
+              <div className="mt-auto p-5 bg-slate-800/50 rounded-[32px] border border-slate-700/50">
+                <div className="flex items-center justify-between">
+                  <div className="truncate mr-4">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-1 font-black">{user?.role === 'teacher' ? '教师' : '学生'}</p>
+                    <p className="text-sm font-bold truncate">{user?.name}</p>
+                  </div>
+                  <button onClick={handleLogout} className="p-2.5 text-slate-400 hover:text-rose-400 transition-colors"><LogOut className="w-5 h-5" /></button>
+                </div>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Sidebar */}
       <aside className="fixed top-0 left-0 h-full w-64 bg-slate-900 text-white hidden lg:flex flex-col p-8 z-50">
         <div className="flex items-center gap-4 mb-12 px-2">
           <div className="w-12 h-12 bg-indigo-500 rounded-2xl flex items-center justify-center shadow-xl shadow-indigo-500/20">
@@ -787,6 +1259,11 @@ export default function App() {
           <button onClick={() => setView('student')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
             <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
           </button>
+          {user?.role === 'student' && (
+            <button onClick={() => setView('materials')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+              <Bookmark className="w-5 h-5" /> 作文素材库
+            </button>
+          )}
           {user?.role === 'teacher' && (
             <>
               <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
@@ -811,8 +1288,32 @@ export default function App() {
         </div>
       </aside>
 
+      {/* Mobile Bottom Nav */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-20 bg-white border-t border-slate-100 z-50 flex items-center justify-around px-4 pb-2">
+        {user?.role === 'teacher' && (
+          <button onClick={() => setView('teacher')} className={cn("flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all", view === 'teacher' ? "text-indigo-600" : "text-slate-400")}>
+            <BarChart3 className="w-6 h-6" />
+            <span className="text-[10px] font-black uppercase tracking-widest">看板</span>
+          </button>
+        )}
+        <button onClick={() => setView('student')} className={cn("flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all", view === 'student' ? "text-indigo-600" : "text-slate-400")}>
+          <Activity className="w-6 h-6" />
+          <span className="text-[10px] font-black uppercase tracking-widest">诊断</span>
+        </button>
+        {user?.role === 'student' && (
+          <button onClick={() => setView('materials')} className={cn("flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all", view === 'materials' ? "text-indigo-600" : "text-slate-400")}>
+            <Bookmark className="w-6 h-6" />
+            <span className="text-[10px] font-black uppercase tracking-widest">素材</span>
+          </button>
+        )}
+        <button onClick={handleLogout} className="flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl text-slate-400">
+          <LogOut className="w-6 h-6" />
+          <span className="text-[10px] font-black uppercase tracking-widest">退出</span>
+        </button>
+      </nav>
+
       {/* Main Content */}
-      <main className="lg:ml-64 p-8 md:p-12 max-w-7xl mx-auto">
+      <main className="lg:ml-64 p-6 md:p-12 pt-24 lg:pt-12 max-w-7xl mx-auto pb-32 lg:pb-12">
         <AnimatePresence mode="wait">
           {view === 'teacher' ? (
             <motion.div key="teacher" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="space-y-10">
@@ -864,6 +1365,9 @@ export default function App() {
                   </div>
                 </Card>
               </div>
+              <Card title="知识点掌握热力图" subtitle="全班薄弱环节分布" delay={0.65} className="mb-8">
+                <ClassHeatmap students={students} />
+              </Card>
               <Card title="学生成绩明细" subtitle={`共 ${filteredStudents.length} 条记录`} delay={0.7}>
                 <div className="overflow-x-auto mt-6">
                   <table className="w-full text-left">
@@ -926,6 +1430,12 @@ export default function App() {
                     <div className="flex items-center gap-4 mt-3">
                       <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-4 py-1.5 rounded-full uppercase tracking-[0.15em]">学号: {selectedStudent.id}</span>
                       <span className="text-[10px] font-black bg-slate-100 text-slate-600 px-4 py-1.5 rounded-full uppercase tracking-[0.15em]">2026年春季月考</span>
+                      <button 
+                        onClick={() => exportToPDF('student-report', `${selectedStudent.name}_全项学情报告.pdf`)}
+                        className="flex items-center gap-2 px-4 py-1.5 bg-white border border-slate-200 rounded-full text-[10px] font-black text-slate-500 hover:bg-slate-50 transition-all uppercase tracking-widest"
+                      >
+                        <Download className="w-3 h-3" /> 导出 PDF 报告
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -935,7 +1445,8 @@ export default function App() {
                 </div>
               </header>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
+              <div id="student-report" className="space-y-10">
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
                 {/* AI Writing - Bento Large */}
                 <Card className="md:col-span-3 lg:col-span-3 bg-emerald-50/30 border-emerald-100/50" delay={0.1}>
                   <div className="flex items-center justify-between mb-10">
@@ -1077,6 +1588,11 @@ export default function App() {
                   </div>
                 </Card>
 
+                {/* Growth Curve */}
+                <Card className="md:col-span-2 lg:col-span-2" title="成绩成长曲线" subtitle="历史得分趋势分析" delay={0.45}>
+                  <GrowthCurve history={scoreHistory} />
+                </Card>
+
                 {/* History */}
                 <Card className="md:col-span-2 lg:col-span-2" title="历史诊断记录" subtitle="作文深度诊断历史" delay={0.5}>
                   <div className="mt-8 space-y-4 max-h-[380px] overflow-y-auto pr-4 custom-scrollbar">
@@ -1097,9 +1613,15 @@ export default function App() {
                   </div>
                 </Card>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+        {view === 'materials' && (
+          <motion.div key="materials" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+            <MaterialLibrary materials={materials} onDelete={deleteMaterial} />
+          </motion.div>
+        )}
+      </AnimatePresence>
       </main>
 
       {/* Action Modals */}
@@ -1118,12 +1640,14 @@ export default function App() {
                 </div>
                 <button onClick={() => { setActiveAction(null); setActionContent(null); }} className="w-16 h-16 flex items-center justify-center bg-white border border-slate-200 rounded-[24px] hover:bg-slate-50 transition-all shadow-sm hover:rotate-90 duration-500"><AlertCircle className="w-8 h-8 text-slate-400 rotate-45" /></button>
               </div>
-              <div className="p-12 overflow-y-auto flex-1 custom-scrollbar">
+              <div className="p-12 overflow-y-auto flex-1 custom-scrollbar" id="action-content">
                 {isActionLoading ? (
                   <div className="py-24 text-center space-y-8">
                     <Loader2 className="w-16 h-16 text-indigo-600 animate-spin mx-auto" />
                     <p className="text-indigo-600 font-black text-2xl animate-pulse">AI 正在为您精心准备内容...</p>
                   </div>
+                ) : activeAction === 'practice' && practiceData ? (
+                  <InteractivePractice data={practiceData} />
                 ) : activeAction === 'graph' ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
                     <div className="h-[450px] w-full">
@@ -1174,6 +1698,30 @@ export default function App() {
                     <div className="prose prose-indigo max-w-none prose-p:leading-loose prose-headings:font-serif prose-headings:tracking-tight">
                       <ReactMarkdown>{actionContent}</ReactMarkdown>
                     </div>
+                    {activeAction === 'essay' && goldenSentences.length > 0 && (
+                      <div className="mt-16 pt-16 border-t border-slate-100">
+                        <h4 className="text-2xl font-black text-slate-900 mb-8 flex items-center gap-3">
+                          <Sparkles className="text-amber-500" /> 金句推荐 / Golden Sentences
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          {goldenSentences.map((s, idx) => (
+                            <div key={idx} className="bg-slate-50 p-8 rounded-[32px] border border-slate-100 group hover:border-indigo-200 transition-all">
+                              <div className="flex justify-between items-start mb-4">
+                                <span className="px-3 py-1 bg-white text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-indigo-100">{s.theme}</span>
+                                <button 
+                                  onClick={() => saveMaterial(s.content, s.theme, essayAnalysis?.title || '升格范文')}
+                                  className="p-3 bg-white text-slate-400 rounded-2xl hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"
+                                  title="一键收藏"
+                                >
+                                  <Bookmark className="w-5 h-5" />
+                                </button>
+                              </div>
+                              <p className="text-slate-700 leading-loose font-serif italic text-lg">“{s.content}”</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="py-24 text-center opacity-30">
