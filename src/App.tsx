@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -287,27 +286,17 @@ export default function App() {
   const generateAIAnalysis = async (student: Student) => {
     setIsGenerating(true);
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const response = await genAI.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: `你是一位资深的语文教育专家。请根据以下学生的考试数据进行深度学情分析，并给出具体的提升建议。
-        学生姓名：${student.name}
-        各项得分：
-        - 选择题：${student.choice}/30
-        - 现代文阅读：${student.modernReading}/30
-        - 文言文阅读：${student.classicReading}/20
-        - 非连续性文本：${student.nonLinear}/10
-        - 默写填空：${student.dictation}/10
-        - 作文：${student.composition}/50
-        总分：${student.total}/150
-
-        请以 Markdown 格式输出，包含：
-        1. 总体评价
-        2. 优势分析
-        3. 薄弱环节
-        4. 针对性提升方案（分阶段、可操作）`,
+      const res = await fetch('/api/analyze_student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student })
       });
-      setAiPrescription(response.text || "分析失败");
+      const data = await res.json();
+      if (res.ok) {
+        setAiPrescription(data.analysis || "分析失败");
+      } else {
+        throw new Error(data.error || "分析失败");
+      }
     } catch (err: any) { 
       console.error("AI Analysis Error:", err);
       setAiPrescription("分析失败: " + err.message); 
@@ -319,41 +308,12 @@ export default function App() {
     if (!essayTitle.trim() || essayImages.length === 0) return;
     setIsAnalyzingEssay(true);
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const parts: any[] = [
-        { text: `你是一位资深的语文阅卷组组长。请对这篇题目为《${essayTitle}》的学生手写作文进行深度诊断。
-        要求：
-        1. 识别图片中的文字内容（如果清晰）。
-        2. 从“立意深度”、“结构安排”、“语言表达”、“卷面书写”四个维度进行评分（满分50）。
-        3. 给出具体的“升格建议”（即如何修改能拿到更高分）。
-        请使用 Markdown 格式输出。` }
-      ];
-
-      for (const imgBase64 of essayImages) {
-        const base64Data = imgBase64.split(',')[1];
-        const mimeType = imgBase64.split(',')[0].split(':')[1].split(';')[0];
-        parts.push({
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType
-          }
-        });
-      }
-
-      const response = await genAI.models.generateContent({
-        model: "gemini-3.1-flash-image-preview",
-        contents: { parts },
-      });
-
-      const analysis = response.text || "阅卷失败";
-      
-      // 保存到数据库
       const teacherId = user?.role === 'teacher' ? user.uid : (students.find(s => s.id === selectedStudentId)?.teacher_id || user?.uid);
       const formData = new FormData();
       formData.append('title', essayTitle);
       formData.append('studentId', selectedStudentId || '');
       formData.append('teacherId', teacherId || '');
-      formData.append('analysis', analysis);
+      formData.append('images', JSON.stringify(essayImages));
       
       const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
       const data = await res.json();
@@ -363,7 +323,7 @@ export default function App() {
         setAnalysisHistory(prev => [data, ...prev]);
         setEssayImages([]);
         setEssayTitle('');
-      } else alert(data.error || "保存失败");
+      } else alert(data.error || "阅卷失败");
     } catch (err: any) { 
       console.error("Essay Analysis Error:", err);
       alert("阅卷失败: " + err.message); 
@@ -372,35 +332,26 @@ export default function App() {
   };
 
   const fetchUpgradedEssay = async () => {
-    if (!essayAnalysis) return;
+    if (!essayAnalysis) {
+      alert("请先提交作文并完成深度诊断，再查看范文升格。");
+      return;
+    }
     setIsActionLoading(true);
     setActiveAction('essay');
     setPreGeneratedAudio(null);
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const response = await genAI.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: `你是一位资深的语文特级教师。请对以下作文进行“升格”处理。
-        题目：《${essayAnalysis.title}》
-        原文内容：${essayAnalysis.analysis}
-        
-        任务要求：
-        1. 创作一篇 800-1000 字的“升格版”范文，要求立意深远、文采斐然、结构严谨。
-        2. 详细列出“亮点解析”，说明修改了哪些地方，提升了什么境界。
-        
-        输出格式：
-        【升格范文】
-        （此处为范文内容，不少于 800 字）
-        
-        【亮点解析】
-        （此处为解析内容）`,
+      const res = await fetch('/api/upgrade_essay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: essayAnalysis.title, content: essayAnalysis.analysis })
       });
-      const text = response.text || "生成失败";
-      setActionContent(text);
-      
-      // 立即触发后台语音预生成
-      if (text) {
-        preGenerateTTS(text);
+      const data = await res.json();
+      if (res.ok) {
+        const text = data.text || "生成失败";
+        setActionContent(text);
+        if (text) preGenerateTTS(text);
+      } else {
+        throw new Error(data.error || "生成失败");
       }
     } catch (err: any) { 
       console.error("Upgrade Essay Error:", err);
@@ -410,22 +361,25 @@ export default function App() {
   };
 
   const fetchPractice = async () => {
-    if (!aiPrescription) return;
+    if (!aiPrescription || aiPrescription.includes("失败")) {
+      alert("请先生成有效的智能学习处方，再进行专项练习。");
+      return;
+    }
     setIsActionLoading(true);
     setActiveAction('practice');
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const response = await genAI.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: `你是一位资深的语文教育专家。请根据以下学情分析，为学生生成 3 道针对性的提升练习题。
-        学情分析：${aiPrescription}
-        
-        任务要求：
-        1. 题目要贴合学生的薄弱环节。
-        2. 包含：题目内容、解题思路、参考答案。
-        3. 使用 Markdown 格式输出。`,
+      const student = students.find(s => s.id === selectedStudentId);
+      const res = await fetch('/api/generate_practice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student })
       });
-      setActionContent(response.text || "生成失败");
+      const data = await res.json();
+      if (res.ok) {
+        setActionContent(data.text || "生成失败");
+      } else {
+        throw new Error(data.error || "生成失败");
+      }
     } catch (err: any) { 
       console.error("Generate Practice Error:", err);
       setActionContent("生成失败: " + err.message); 
@@ -462,23 +416,14 @@ export default function App() {
     textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
     
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `请作为一名专业的播音员，准确、自然地朗读以下文字。特别注意多音字在上下文中的正确发音，保持语速适中：\n\n${textToRead}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-            },
-          },
-        },
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead })
       });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        setPreGeneratedAudio(base64Audio);
+      const data = await res.json();
+      if (res.ok && data.audio) {
+        setPreGeneratedAudio(data.audio);
       }
     } catch (err) {
       console.error("语音预生成失败:", err);
@@ -597,25 +542,16 @@ export default function App() {
     textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
 
     try {
-      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
-      const response = await genAI.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `请作为一名专业的播音员，准确、自然地朗读以下文字。特别注意多音字在上下文中的正确发音，保持语速适中：\n\n${textToRead}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
-            },
-          },
-        },
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToRead })
       });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        playAudioFromBase64(base64Audio);
+      const data = await res.json();
+      if (res.ok && data.audio) {
+        playAudioFromBase64(data.audio);
       } else {
-        throw new Error("未能生成音频数据");
+        throw new Error(data.error || "未能生成音频数据");
       }
     } catch (err: any) { 
       console.error("TTS Error:", err); 
