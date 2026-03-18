@@ -283,6 +283,18 @@ export default function App() {
     }
   };
 
+  const handleEssayImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    Array.from(e.target.files || []).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => setEssayImages(prev => [...prev, event.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0] || {
+    id: 'N/A', name: '未选择', choice: 0, modernReading: 0, classicReading: 0, nonLinear: 0, dictation: 0, composition: 0, total: 0
+  };
+
   const generateAIAnalysis = async (student: Student) => {
     setIsGenerating(true);
     try {
@@ -308,22 +320,25 @@ export default function App() {
     if (!essayTitle.trim() || essayImages.length === 0) return;
     setIsAnalyzingEssay(true);
     try {
-      const teacherId = user?.role === 'teacher' ? user.uid : (students.find(s => s.id === selectedStudentId)?.teacher_id || user?.uid);
+      const teacherId = user?.role === 'teacher' ? user.uid : (selectedStudent.teacher_id || user?.uid || 'system');
       const formData = new FormData();
       formData.append('title', essayTitle);
-      formData.append('studentId', selectedStudentId || '');
-      formData.append('teacherId', teacherId || '');
+      formData.append('studentId', selectedStudent.id || 'N/A');
+      formData.append('teacherId', teacherId);
       formData.append('images', JSON.stringify(essayImages));
       
       const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
-      const data = await res.json();
       
-      if (res.ok) {
-        setEssayAnalysis(data);
-        setAnalysisHistory(prev => [data, ...prev]);
-        setEssayImages([]);
-        setEssayTitle('');
-      } else alert(data.error || "阅卷失败");
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "阅卷失败 (服务器错误)" }));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
+      
+      const data = await res.json();
+      setEssayAnalysis(data);
+      setAnalysisHistory(prev => [data, ...prev]);
+      setEssayImages([]);
+      setEssayTitle('');
     } catch (err: any) { 
       console.error("Essay Analysis Error:", err);
       alert("阅卷失败: " + err.message); 
@@ -345,14 +360,16 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: essayAnalysis.title, content: essayAnalysis.analysis })
       });
-      const data = await res.json();
-      if (res.ok) {
-        const text = data.text || "生成失败";
-        setActionContent(text);
-        if (text) preGenerateTTS(text);
-      } else {
-        throw new Error(data.error || "生成失败");
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "生成失败 (服务器错误)" }));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
       }
+      
+      const data = await res.json();
+      const text = data.text || "生成失败";
+      setActionContent(text);
+      if (text) preGenerateTTS(text);
     } catch (err: any) { 
       console.error("Upgrade Essay Error:", err);
       setActionContent("生成失败: " + err.message); 
@@ -368,18 +385,20 @@ export default function App() {
     setIsActionLoading(true);
     setActiveAction('practice');
     try {
-      const student = students.find(s => s.id === selectedStudentId);
+      // 使用已定义的 selectedStudent 确保数据存在
       const res = await fetch('/api/generate_practice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student })
+        body: JSON.stringify({ student: selectedStudent })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setActionContent(data.text || "生成失败");
-      } else {
-        throw new Error(data.error || "生成失败");
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "生成失败 (服务器错误)" }));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
       }
+      
+      const data = await res.json();
+      setActionContent(data.text || "生成失败");
     } catch (err: any) { 
       console.error("Generate Practice Error:", err);
       setActionContent("生成失败: " + err.message); 
@@ -421,9 +440,12 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToRead })
       });
-      const data = await res.json();
-      if (res.ok && data.audio) {
-        setPreGeneratedAudio(data.audio);
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audio) {
+          setPreGeneratedAudio(data.audio);
+        }
       }
     } catch (err) {
       console.error("语音预生成失败:", err);
@@ -547,11 +569,17 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: textToRead })
       });
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ error: "播放失败 (服务器错误)" }));
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
+      
       const data = await res.json();
-      if (res.ok && data.audio) {
+      if (data.audio) {
         playAudioFromBase64(data.audio);
       } else {
-        throw new Error(data.error || "未能生成音频数据");
+        throw new Error("未能生成音频数据");
       }
     } catch (err: any) { 
       console.error("TTS Error:", err); 
@@ -664,18 +692,6 @@ export default function App() {
     };
     reader.readAsArrayBuffer(file);
     e.target.value = '';
-  };
-
-  const handleEssayImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    Array.from(e.target.files || []).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => setEssayImages(prev => [...prev, event.target?.result as string]);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0] || {
-    id: 'N/A', name: '未选择', choice: 0, modernReading: 0, classicReading: 0, nonLinear: 0, dictation: 0, composition: 0, total: 0
   };
 
   const classStats = {
