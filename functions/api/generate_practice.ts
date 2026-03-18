@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
     5. 难度适配中高考水平。`;
 
     const response = await genAI.models.generateContent({
-      model: "gemini-3.1-flash-preview",
+      model: "gemini-3-flash-preview",
       contents: prompt,
     });
 
