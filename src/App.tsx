@@ -497,6 +497,7 @@ export default function App() {
       if (user.role === 'teacher') {
         fetchAnalysisHistory(selectedStudentId, user.uid);
         fetchScoreHistory(selectedStudentId);
+        fetchMaterials(selectedStudentId);
       } else {
         // 如果是学生，从 students 列表中找到对应的 teacher_id
         const student = students.find(s => s.id === selectedStudentId);
@@ -741,25 +742,45 @@ export default function App() {
       const data = await res.json();
       const text = data.text || "生成失败";
       
-      // Parse golden sentences
-      const goldenSection = text.split('【金句推荐】')[1];
-      if (goldenSection) {
-        const sentences = goldenSection.trim().split('\n')
-          .filter(line => line.startsWith('-'))
-          .map(line => {
-            const parts = line.replace('-', '').split('|');
-            return {
-              content: (parts[0] || '').trim(),
-              theme: (parts[1] || '其他').trim()
-            };
-          });
-        setGoldenSentences(sentences);
-      } else {
-        setGoldenSentences([]);
-      }
+      // Parse sections using regex
+      const essayMatch = text.match(/【升格范文】([\s\S]*?)(?=【金句推荐】|【亮点解析】|$)/);
+      const goldenMatch = text.match(/【金句推荐】([\s\S]*?)(?=【亮点解析】|【升格范文】|$)/);
+      const analysisMatch = text.match(/【亮点解析】([\s\S]*?)(?=【金句推荐】|【升格范文】|$)/);
 
-      setActionContent(text.split('【金句推荐】')[0]);
-      if (text) preGenerateTTS(text.split('【金句推荐】')[0]);
+      const essayContent = essayMatch ? essayMatch[1].trim() : "";
+      const analysisContent = analysisMatch ? analysisMatch[1].trim() : "";
+      const goldenSection = goldenMatch ? goldenMatch[1].trim() : "";
+
+      // Reconstruct action content for display (Essay + Analysis)
+      let displayContent = "";
+      if (essayContent) displayContent += `### 升格范文\n\n${essayContent}\n\n`;
+      if (analysisContent) displayContent += `### 亮点解析\n\n${analysisContent}`;
+      
+      if (!displayContent) displayContent = text;
+
+      // Parse golden sentences
+      let sentences: {content: string, theme: string}[] = [];
+      if (goldenSection) {
+        sentences = goldenSection.split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map(line => {
+            const match = line.match(/^[-*•\d.]*\s*(.*?)\s*[|:：]\s*(.*)$/);
+            if (match) {
+              return { content: match[1].trim(), theme: match[2].trim() };
+            }
+            const simpleMatch = line.match(/^[-*•\d.]*\s*(.*)$/);
+            if (simpleMatch && simpleMatch[1].trim()) {
+              return { content: simpleMatch[1].trim(), theme: '其他' };
+            }
+            return null;
+          })
+          .filter((s): s is {content: string, theme: string} => s !== null);
+      }
+      
+      setGoldenSentences(sentences);
+      setActionContent(displayContent);
+      if (essayContent) preGenerateTTS(essayContent);
     } catch (err: any) { 
       console.error("Upgrade Essay Error:", err);
       setActionContent("生成失败: " + err.message); 
@@ -1210,11 +1231,9 @@ export default function App() {
                 <button onClick={() => { setView('student'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
                   <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
                 </button>
-                {user?.role === 'student' && (
-                  <button onClick={() => { setView('materials'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
-                    <Bookmark className="w-5 h-5" /> 作文素材库
-                  </button>
-                )}
+                <button onClick={() => { setView('materials'); setIsSidebarOpen(false); }} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+                  <Bookmark className="w-5 h-5" /> {user?.role === 'teacher' ? '学生素材库' : '我的素材库'}
+                </button>
                 {user?.role === 'teacher' && (
                   <>
                     <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
@@ -1259,11 +1278,9 @@ export default function App() {
           <button onClick={() => setView('student')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'student' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
             <Activity className="w-5 h-5" /> {user?.role === 'teacher' ? '学情诊断' : '我的诊断'}
           </button>
-          {user?.role === 'student' && (
-            <button onClick={() => setView('materials')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
-              <Bookmark className="w-5 h-5" /> 作文素材库
-            </button>
-          )}
+          <button onClick={() => setView('materials')} className={cn("w-full flex items-center gap-4 px-5 py-4 rounded-2xl text-sm font-bold transition-all", view === 'materials' ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+            <Bookmark className="w-5 h-5" /> {user?.role === 'teacher' ? '学生素材库' : '我的素材库'}
+          </button>
           {user?.role === 'teacher' && (
             <>
               <div className="pt-8 pb-3 px-5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">数据中心</div>
@@ -1300,12 +1317,10 @@ export default function App() {
           <Activity className="w-6 h-6" />
           <span className="text-[10px] font-black uppercase tracking-widest">诊断</span>
         </button>
-        {user?.role === 'student' && (
-          <button onClick={() => setView('materials')} className={cn("flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all", view === 'materials' ? "text-indigo-600" : "text-slate-400")}>
-            <Bookmark className="w-6 h-6" />
-            <span className="text-[10px] font-black uppercase tracking-widest">素材</span>
-          </button>
-        )}
+        <button onClick={() => setView('materials')} className={cn("flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl transition-all", view === 'materials' ? "text-indigo-600" : "text-slate-400")}>
+          <Bookmark className="w-6 h-6" />
+          <span className="text-[10px] font-black uppercase tracking-widest">素材</span>
+        </button>
         <button onClick={handleLogout} className="flex flex-col items-center gap-1.5 px-4 py-2 rounded-2xl text-slate-400">
           <LogOut className="w-6 h-6" />
           <span className="text-[10px] font-black uppercase tracking-widest">退出</span>
