@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { GoogleGenAI, Modality } from "@google/genai";
 import { 
   Users, UserCircle, BookOpen, PenTool, Sparkles, 
   TrendingUp, Award, AlertCircle, CheckCircle2, 
@@ -31,6 +32,7 @@ interface Student {
   dictation: number;
   composition: number;
   total: number;
+  teacher_id?: string;
 }
 
 interface WritingRecord {
@@ -121,7 +123,7 @@ export default function App() {
           setView('student');
           const sid = userData.studentId || userData.uid;
           setSelectedStudentId(sid);
-          fetchAnalysisHistory(sid, userData.uid);
+          // 这里的 sid 只是为了触发后续的 useEffect，真正的历史记录会在获取到学生记录后加载
         } else if (userData.role === 'admin') setView('admin');
       } catch (e) { localStorage.removeItem('lexis_user'); }
     }
@@ -148,6 +150,32 @@ export default function App() {
             })));
           }
         }).catch(() => setStudents([]));
+    } else if (user?.role === 'student' && user.studentId) {
+      fetch(`/api/students?student_id=${user.studentId}`)
+        .then(res => res.ok ? res.json() : [])
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            const s = data[0];
+            setStudents([{
+              dbId: s.id,
+              id: s.student_id || 'N/A',
+              name: s.name,
+              choice: s.choice || 0,
+              modernReading: s.modern_reading || 0,
+              classicReading: s.classic_reading || 0,
+              nonLinear: s.non_linear || 0,
+              dictation: s.dictation || 0,
+              composition: s.composition || 0,
+              total: s.total || 0,
+              teacher_id: s.teacher_id
+            }]);
+            setSelectedStudentId(s.student_id);
+            // 获取该学生的历史记录，使用导入该学生的教师ID
+            if (s.teacher_id) {
+              fetchAnalysisHistory(s.student_id, s.teacher_id);
+            }
+          }
+        }).catch(() => setStudents([]));
     }
   }, [user]);
 
@@ -165,9 +193,19 @@ export default function App() {
         audioRef.current = null;
         setIsPlayingAudio(false);
       }
-      fetchAnalysisHistory(selectedStudentId);
+      
+      // 如果是老师，直接使用自己的 UID
+      if (user.role === 'teacher') {
+        fetchAnalysisHistory(selectedStudentId, user.uid);
+      } else {
+        // 如果是学生，从 students 列表中找到对应的 teacher_id
+        const student = students.find(s => s.id === selectedStudentId);
+        if (student?.teacher_id) {
+          fetchAnalysisHistory(selectedStudentId, student.teacher_id);
+        }
+      }
     }
-  }, [selectedStudentId, user]);
+  }, [selectedStudentId, user, students]);
 
   const fetchAnalysisHistory = async (studentId: string, teacherId?: string) => {
     if (!studentId) return;
@@ -249,14 +287,31 @@ export default function App() {
   const generateAIAnalysis = async (student: Student) => {
     setIsGenerating(true);
     try {
-      const res = await fetch('/api/analyze_student', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student })
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const response = await genAI.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: `你是一位资深的语文教育专家。请根据以下学生的考试数据进行深度学情分析，并给出具体的提升建议。
+        学生姓名：${student.name}
+        各项得分：
+        - 选择题：${student.choice}/30
+        - 现代文阅读：${student.modernReading}/30
+        - 文言文阅读：${student.classicReading}/20
+        - 非连续性文本：${student.nonLinear}/10
+        - 默写填空：${student.dictation}/10
+        - 作文：${student.composition}/50
+        总分：${student.total}/150
+
+        请以 Markdown 格式输出，包含：
+        1. 总体评价
+        2. 优势分析
+        3. 薄弱环节
+        4. 针对性提升方案（分阶段、可操作）`,
       });
-      const data = await res.json();
-      setAiPrescription(data.analysis || "分析失败");
-    } catch (err) { setAiPrescription("网络错误"); }
+      setAiPrescription(response.text || "分析失败");
+    } catch (err: any) { 
+      console.error("AI Analysis Error:", err);
+      setAiPrescription("分析失败: " + err.message); 
+    }
     finally { setIsGenerating(false); }
   };
 
@@ -264,20 +319,55 @@ export default function App() {
     if (!essayTitle.trim() || essayImages.length === 0) return;
     setIsAnalyzingEssay(true);
     try {
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const parts: any[] = [
+        { text: `你是一位资深的语文阅卷组组长。请对这篇题目为《${essayTitle}》的学生手写作文进行深度诊断。
+        要求：
+        1. 识别图片中的文字内容（如果清晰）。
+        2. 从“立意深度”、“结构安排”、“语言表达”、“卷面书写”四个维度进行评分（满分50）。
+        3. 给出具体的“升格建议”（即如何修改能拿到更高分）。
+        请使用 Markdown 格式输出。` }
+      ];
+
+      for (const imgBase64 of essayImages) {
+        const base64Data = imgBase64.split(',')[1];
+        const mimeType = imgBase64.split(',')[0].split(':')[1].split(';')[0];
+        parts.push({
+          inlineData: {
+            data: base64Data,
+            mimeType: mimeType
+          }
+        });
+      }
+
+      const response = await genAI.models.generateContent({
+        model: "gemini-3.1-flash-image-preview",
+        contents: { parts },
+      });
+
+      const analysis = response.text || "阅卷失败";
+      
+      // 保存到数据库
+      const teacherId = user?.role === 'teacher' ? user.uid : (students.find(s => s.id === selectedStudentId)?.teacher_id || user?.uid);
       const formData = new FormData();
       formData.append('title', essayTitle);
       formData.append('studentId', selectedStudentId || '');
-      formData.append('teacherId', user?.uid || '');
-      essayImages.forEach(img => formData.append('images', img));
+      formData.append('teacherId', teacherId || '');
+      formData.append('analysis', analysis);
+      
       const res = await fetch('/api/analyze_essay', { method: 'POST', body: formData });
       const data = await res.json();
+      
       if (res.ok) {
         setEssayAnalysis(data);
         setAnalysisHistory(prev => [data, ...prev]);
         setEssayImages([]);
         setEssayTitle('');
-      } else alert(data.error || "阅卷失败");
-    } catch (err) { alert("网络错误"); }
+      } else alert(data.error || "保存失败");
+    } catch (err: any) { 
+      console.error("Essay Analysis Error:", err);
+      alert("阅卷失败: " + err.message); 
+    }
     finally { setIsAnalyzingEssay(false); }
   };
 
@@ -287,34 +377,59 @@ export default function App() {
     setActiveAction('essay');
     setPreGeneratedAudio(null);
     try {
-      const res = await fetch('/api/upgrade_essay', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: essayAnalysis.title, content: essayAnalysis.analysis })
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const response = await genAI.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: `你是一位资深的语文特级教师。请对以下作文进行“升格”处理。
+        题目：《${essayAnalysis.title}》
+        原文内容：${essayAnalysis.analysis}
+        
+        任务要求：
+        1. 创作一篇 800-1000 字的“升格版”范文，要求立意深远、文采斐然、结构严谨。
+        2. 详细列出“亮点解析”，说明修改了哪些地方，提升了什么境界。
+        
+        输出格式：
+        【升格范文】
+        （此处为范文内容，不少于 800 字）
+        
+        【亮点解析】
+        （此处为解析内容）`,
       });
-      const data = await res.json();
-      setActionContent(data.text);
+      const text = response.text || "生成失败";
+      setActionContent(text);
       
       // 立即触发后台语音预生成
-      if (data.text) {
-        preGenerateTTS(data.text);
+      if (text) {
+        preGenerateTTS(text);
       }
-    } catch (err) { console.error(err); }
+    } catch (err: any) { 
+      console.error("Upgrade Essay Error:", err);
+      setActionContent("生成失败: " + err.message); 
+    }
     finally { setIsActionLoading(false); }
   };
 
   const fetchPractice = async () => {
+    if (!aiPrescription) return;
     setIsActionLoading(true);
     setActiveAction('practice');
     try {
-      const res = await fetch('/api/generate_practice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student: selectedStudent })
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const response = await genAI.models.generateContent({
+        model: "gemini-3.1-pro-preview",
+        contents: `你是一位资深的语文教育专家。请根据以下学情分析，为学生生成 3 道针对性的提升练习题。
+        学情分析：${aiPrescription}
+        
+        任务要求：
+        1. 题目要贴合学生的薄弱环节。
+        2. 包含：题目内容、解题思路、参考答案。
+        3. 使用 Markdown 格式输出。`,
       });
-      const data = await res.json();
-      setActionContent(data.text);
-    } catch (err) { console.error(err); }
+      setActionContent(response.text || "生成失败");
+    } catch (err: any) { 
+      console.error("Generate Practice Error:", err);
+      setActionContent("生成失败: " + err.message); 
+    }
     finally { setIsActionLoading(false); }
   };
 
@@ -347,17 +462,23 @@ export default function App() {
     textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
     
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead })
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `请作为一名专业的播音员，准确、自然地朗读以下文字。特别注意多音字在上下文中的正确发音，保持语速适中：\n\n${textToRead}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+            },
+          },
+        },
       });
-      
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audio) {
-          setPreGeneratedAudio(data.audio);
-        }
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        setPreGeneratedAudio(base64Audio);
       }
     } catch (err) {
       console.error("语音预生成失败:", err);
@@ -431,7 +552,7 @@ export default function App() {
     }
   };
 
-  const playTTS = async (text: string) => {
+  const playTTS = async (text: string, skipExtract = false) => {
     if (isPlayingAudio) {
       if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
       setIsPlayingAudio(false);
@@ -445,27 +566,30 @@ export default function App() {
 
     setIsTTSLoading(true);
     let textToRead = text;
-    // 更加精准的提取逻辑：优先匹配带括号的标题，或者独立行
-    const patterns = [
-      /【升格范文】([\s\S]*?)(?=【亮点解析】|【亮点赏析】|【|$)/,
-      /(?:^|\n)升格范文(?:$|\n)([\s\S]*?)(?=(?:^|\n)亮点解析|$)/m,
-      /范文正文([\s\S]*?)(?=亮点解析|解析|【|$)/
-    ];
+    
+    if (!skipExtract) {
+      // 更加精准的提取逻辑：优先匹配带括号的标题，或者独立行
+      const patterns = [
+        /【升格范文】([\s\S]*?)(?=【亮点解析】|【亮点赏析】|【|$)/,
+        /(?:^|\n)升格范文(?:$|\n)([\s\S]*?)(?=(?:^|\n)亮点解析|$)/m,
+        /范文正文([\s\S]*?)(?=亮点解析|解析|【|$)/
+      ];
 
-    let found = false;
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match && match[1] && match[1].trim().length > 10) {
-        textToRead = match[1].trim();
-        found = true;
-        break;
+      let found = false;
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1] && match[1].trim().length > 10) {
+          textToRead = match[1].trim();
+          found = true;
+          break;
+        }
       }
-    }
 
-    if (!found) {
-      const markerIndex = text.indexOf('升格范文');
-      if (markerIndex !== -1) {
-        textToRead = text.substring(markerIndex + 4).trim();
+      if (!found) {
+        const markerIndex = text.indexOf('升格范文');
+        if (markerIndex !== -1) {
+          textToRead = text.substring(markerIndex + 4).trim();
+        }
       }
     }
 
@@ -473,20 +597,23 @@ export default function App() {
     textToRead = textToRead.replace(/[#*`]/g, '').substring(0, 2000);
 
     try {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: textToRead })
+      const genAI = new GoogleGenAI({ apiKey: (process.env.GEMINI_API_KEY || '') });
+      const response = await genAI.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `请作为一名专业的播音员，准确、自然地朗读以下文字。特别注意多音字在上下文中的正确发音，保持语速适中：\n\n${textToRead}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: 'Zephyr' },
+            },
+          },
+        },
       });
-      
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: '请求失败' }));
-        throw new Error(errData.error || 'TTS 请求失败');
-      }
 
-      const data = await res.json();
-      if (data.audio) {
-        playAudioFromBase64(data.audio);
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        playAudioFromBase64(base64Audio);
       } else {
         throw new Error("未能生成音频数据");
       }
@@ -950,7 +1077,7 @@ export default function App() {
                       ) : (
                         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-white p-10 rounded-[40px] border border-indigo-100 shadow-sm relative group">
                           <div className="absolute top-8 right-8 flex gap-3 no-print">
-                            <button onClick={() => playTTS(aiPrescription || '')} className={cn("p-3.5 rounded-2xl transition-all shadow-sm", isPlayingAudio ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50")}>{isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Volume2 className="w-5 h-5" />}</button>
+                            <button onClick={() => playTTS(aiPrescription || '', true)} className={cn("p-3.5 rounded-2xl transition-all shadow-sm", isPlayingAudio ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50")}>{isPlayingAudio ? <Square className="w-5 h-5 fill-current" /> : <Volume2 className="w-5 h-5" />}</button>
                             <button onClick={() => generateAIAnalysis(selectedStudent)} className="p-3.5 bg-slate-50 text-slate-400 rounded-2xl hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><TrendingUp className="w-5 h-5" /></button>
                           </div>
                           <div className="prose prose-indigo max-w-none prose-p:leading-relaxed prose-headings:font-serif prose-headings:tracking-tight">
